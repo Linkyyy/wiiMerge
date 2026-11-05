@@ -39,7 +39,15 @@ async function configure(key, filename) {
 try {
   if (windows) {
     const socket = net.createServer();
-    await new Promise((resolve) => socket.listen(0, "127.0.0.1", resolve));
+    // Stay below Windows' ephemeral port range so the engine's listen(0)
+    // cannot reuse the released debugging port before WebView2 starts.
+    await new Promise((resolve) =>
+      socket.listen(
+        9222 + Math.floor(Math.random() * 1000),
+        "127.0.0.1",
+        resolve,
+      ),
+    );
     const port = socket.address().port;
     await new Promise((resolve) => socket.close(resolve));
     child = spawn(
@@ -298,6 +306,11 @@ try {
   let hostError = "";
   try {
     hostError = await fs.readFile(path.join(tmp, "host-error.txt"), "utf8");
+  } catch {}
+  try {
+    hostError +=
+      "\nStartup stages:\n" +
+      (await fs.readFile(path.join(tmp, "host-state.txt"), "utf8"));
   } catch {}
   console.error(
     "::error::" +

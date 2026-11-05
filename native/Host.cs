@@ -18,7 +18,10 @@ namespace WiiMerge {
       Application.EnableVisualStyles();
       Application.SetCompatibleTextRenderingDefault(false);
       try { Application.Run(new MainWindow(args)); }
-      catch (Exception error) { MessageBox.Show(error.Message, "wiiMerge 启动失败", MessageBoxButtons.OK, MessageBoxIcon.Error); }
+      catch (Exception error) {
+        foreach (string arg in args) if (arg.StartsWith("--smoke-fixtures=", StringComparison.Ordinal)) File.WriteAllText(Path.Combine(Path.GetDirectoryName(arg.Substring(17)), "host-error.txt"), error.ToString());
+        MessageBox.Show(error.Message, "wiiMerge 启动失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
+      }
     }
   }
 
@@ -43,6 +46,7 @@ namespace WiiMerge {
         else if (arg.StartsWith("--profile=", StringComparison.Ordinal)) profile = Path.GetFullPath(arg.Substring(10));
       }
       if (profile == null) profile = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "wiimerge");
+      Trace("window constructed");
       byte[] key = new byte[32]; using (var rng = RandomNumberGenerator.Create()) rng.GetBytes(key);
       token = BitConverter.ToString(key).Replace("-", "").ToLowerInvariant();
       Controls.Add(view); view.Dock = DockStyle.Fill;
@@ -52,12 +56,14 @@ namespace WiiMerge {
 
     async Task Start() {
       try {
+        Trace("window shown; checking WebView2 runtime");
         try { CoreWebView2Environment.GetAvailableBrowserVersionString(); }
         catch (WebView2RuntimeNotFoundException) {
           if (fixtureFile != null) throw new Exception("Microsoft Edge WebView2 Runtime is missing on the test machine.");
           MessageBox.Show("此精简版需要 Microsoft Edge WebView2 Runtime。\n\nWindows 11 通常已自带。请从微软官网安装 Evergreen WebView2 Runtime 后重新运行：\nhttps://developer.microsoft.com/microsoft-edge/webview2/\n\n也可使用自带运行时的 wiiMerge 兼容版。", "需要 WebView2", MessageBoxButtons.OK, MessageBoxIcon.Information);
           Close(); return;
         }
+        Trace("WebView2 runtime available; starting comparison engine");
         var start = new ProcessStartInfo {
           FileName = Path.Combine(root, "runtime", "node.exe"),
           Arguments = "--max-old-space-size=768 \"" + Path.Combine(root, "app", "server.cjs") + "\"",
@@ -76,11 +82,15 @@ namespace WiiMerge {
         string line = await reading;
         if (line == null) throw new Exception("本地比较引擎未能启动，请重新解压完整安装包。");
         var ready = serializer.Deserialize<Dictionary<string, object>>(line);
+        Trace("comparison engine ready");
         origin = new Uri((string)ready["origin"]);
         if (origin.Scheme != "http" || origin.Host != "127.0.0.1") throw new Exception("无效的本地引擎地址。");
         client.BaseAddress = origin; client.DefaultRequestHeaders.Add("X-WiiMerge-Native", token);
+        Trace("creating browser environment");
         var environment = await CoreWebView2Environment.CreateAsync(null, Path.Combine(profile, "WebView2"));
+        Trace("browser environment ready; creating view");
         await view.EnsureCoreWebView2Async(environment);
+        Trace("view ready");
         view.CoreWebView2.Settings.AreDevToolsEnabled = fixtureFile != null;
         view.CoreWebView2.Settings.AreDefaultContextMenusEnabled = true;
         view.CoreWebView2.Settings.IsStatusBarEnabled = false;
@@ -93,10 +103,15 @@ namespace WiiMerge {
         view.CoreWebView2.PermissionRequested += (_, e) => e.State = CoreWebView2PermissionState.Deny;
         view.CoreWebView2.WebMessageReceived += Message;
         view.CoreWebView2.Navigate((string)ready["launchURL"]);
+        Trace("navigation requested");
       } catch (Exception error) {
         if (fixtureFile != null) File.WriteAllText(Path.Combine(Path.GetDirectoryName(fixtureFile), "host-error.txt"), error.ToString());
         MessageBox.Show(error.Message, "wiiMerge 启动失败", MessageBoxButtons.OK, MessageBoxIcon.Error); Close();
       }
+    }
+
+    void Trace(string stage) {
+      if (fixtureFile != null) File.AppendAllText(Path.Combine(Path.GetDirectoryName(fixtureFile), "host-state.txt"), stage + Environment.NewLine);
     }
 
     async Task<object> Post(string route, object data) {
