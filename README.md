@@ -6,6 +6,8 @@ Windows 优先的本地桌面差异比较工具，使用 React 界面和共享 N
 
 Windows 10 / 11 x64：在 [GitHub Actions 构建页面](https://github.com/Linkyyy/wiiMerge/actions/workflows/ci.yml) 打开成功的构建记录，从 **Artifacts → wiiMerge-WebView2-Windows-x64** 下载精简版 ZIP（需要登录 GitHub）。**解压整个 ZIP 后运行 `wiiMerge.exe`**，请勿只复制启动器。无需另装 Node.js 或 Office。这是未签名的开发版便携程序。
 
+[0.1.1 精简版下载页面](https://github.com/Linkyyy/wiiMerge/actions/runs/41953611324#artifacts)
+
 精简版依赖系统的 **Microsoft Edge WebView2 Runtime 和 .NET Framework 4.8**，Windows 11 通常自带；缺少 WebView2 时程序会提示微软官方安装地址。它仍然自带比较引擎，正常比较不需要联网。旧版 Electron 的规则配置继续可用。
 
 如果电脑不能安装系统组件，可下载 **wiiMerge-Windows-x64** 兼容版，解压后运行 `wiiMerge-0.1.1-Windows-x64.exe`。兼容版自带浏览器运行时，体积较大。Actions 下载有保留期限，过期后可在上述页面重新运行构建。
@@ -14,8 +16,8 @@ Windows 10 / 11 x64：在 [GitHub Actions 构建页面](https://github.com/Linky
 
 | 本地构建实测     | 原 0.1.0  | WebView2 精简版 | 减少  |
 | ---------------- | --------- | --------------- | ----- |
-| 下载文件         | 108.8 MiB | 35.1 MiB        | 67.7% |
-| 解压后的应用文件 | 421.7 MiB | 92.2 MiB        | 78.1% |
+| 下载文件         | 108.8 MiB | 35.2 MiB        | 67.6% |
+| 解压后的应用文件 | 421.7 MiB | 92.3 MiB        | 78.1% |
 
 WebView2 浏览器由系统共享，上表不包括已有系统组件的磁盘占用。精简版保留相同的比较引擎及功能；另外也优化了 Electron 兼容版的依赖和语言资源。所有发布包保留相关开源许可。具体字节数及前后对比写在下载包的 `size-report.json` 中，`SHA256SUMS.txt` 可校验解压后的文件。
 
