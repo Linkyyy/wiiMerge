@@ -3,6 +3,7 @@
 import Workbook from "exceljs/lib/doc/workbook.js";
 import { readArchive } from "./archive.mjs";
 import { makeNormalizer, columnNumber, columnName } from "./rules.mjs";
+import { readLegacyWorkbook } from "./legacy-excel.mjs";
 
 function displayValue(value, formulas) {
   if (value === undefined || value === null) return "";
@@ -19,6 +20,8 @@ function displayValue(value, formulas) {
 }
 
 async function readWorkbook(buffer, rules) {
+  if (buffer[0] !== 0x50 || buffer[1] !== 0x4b)
+    return readLegacyWorkbook(buffer, rules);
   // Validate package paths, encryption and declared sizes before parsing XML.
   await readArchive(buffer, { collect: false });
   const workbook = new Workbook();
@@ -52,6 +55,11 @@ export async function compareExcel(leftBuffer, rightBuffer, rules) {
     ? rules.excelKeyColumns.split(",").map(columnNumber)
     : [];
   let totalChanges = 0;
+  const extent = (rows) => {
+    let last = 0;
+    for (const row of rows?.keys() || []) last = Math.max(last, row);
+    return last;
+  };
   const align = (rows, sheet) => {
     const result = new Map();
     for (const row of rows?.values() ?? []) {
@@ -123,6 +131,8 @@ export async function compareExcel(leftBuffer, rightBuffer, rules) {
       status,
       leftRows: left.get(name)?.size ?? 0,
       rightRows: right.get(name)?.size ?? 0,
+      leftMaxRow: extent(left.get(name)),
+      rightMaxRow: extent(right.get(name)),
       counts: sheetCounts,
     });
   }

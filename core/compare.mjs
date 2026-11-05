@@ -171,8 +171,6 @@ async function compareEntry(key, left, right, rules) {
     }
     const lExcel = left && isWorkbook(left.path),
       rExcel = right && isWorkbook(right.path);
-    if (/\.xls$/i.test(left?.path ?? "") || /\.xls$/i.test(right?.path ?? ""))
-      throw new Error("旧版 .xls 暂不支持，请在 Excel 中另存为 .xlsx 后比较");
     const lInfo =
       !lExcel && !rExcel && rules.encoding === "auto" && left?.file
         ? await inspectFile(left.file)

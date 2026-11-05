@@ -2150,6 +2150,115 @@ kbd {
 }
 
 /* Integrated window chrome and dedicated comparison workspace. */
+.overview-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 18px;
+}
+.overview-heading h2 {
+  font-size: 19px;
+  margin: 0 0 6px;
+  color: #43577a;
+}
+.overview-heading p {
+  font-size: 11px;
+  color: #8392aa;
+}
+.comparison-overview {
+  width: 100%;
+}
+.detail-with-map {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+.detail-with-map > .diff-scroll {
+  min-width: 0;
+  flex: 1;
+}
+.excel-navigation {
+  width: 180px;
+}
+.diff-map {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: #fafcff;
+  padding: 7px 4px 10px;
+  margin: 0 0 8px;
+}
+.map-labels {
+  display: flex;
+  justify-content: space-between;
+  gap: 5px;
+  font-size: 9px;
+  color: #526787;
+  padding-bottom: 6px;
+}
+.map-surface {
+  position: relative;
+  height: 190px;
+  border-radius: 5px;
+  overflow: hidden;
+}
+.map-surface canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.map-track {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: calc(50% - 4px);
+  cursor: crosshair;
+  touch-action: none;
+  border-radius: 4px;
+}
+.map-left {
+  left: 0;
+}
+.map-right {
+  right: 0;
+}
+.map-track:focus-visible {
+  outline: 2px solid #3d63d1;
+  outline-offset: -2px;
+}
+.map-legend {
+  display: flex;
+  justify-content: space-between;
+  font-size: 9px;
+  padding-top: 8px;
+}
+.map-legend span::before {
+  content: "";
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: 3px;
+  border-radius: 1px;
+}
+.map-legend .removed::before {
+  background: #db6868;
+}
+.map-legend .added::before {
+  background: #49a97e;
+}
+.map-legend .changed::before {
+  background: #d79a31;
+}
+.diff-map > small {
+  display: block;
+  color: #899ab5;
+  font-size: 9px;
+  margin-top: 6px;
+}
 .archive-overview .item-pagination {
   position: sticky;
   top: 0;

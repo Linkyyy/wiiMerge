@@ -45,6 +45,9 @@ import { DEFAULT_RULES } from "../core/defaults.mjs";
 
 import Titlebar from "./Titlebar.jsx";
 import Pagination, { usePagination } from "./Pagination.jsx";
+import DiffMap from "./DiffMap.jsx";
+import useDiffViewport from "./useDiffViewport.js";
+import { excelNavigation } from "../core/navigation.mjs";
 const api = window.wiiMerge;
 const LABELS = {
   changed: "有差异",
@@ -210,10 +213,7 @@ export default function App() {
       setSignature(currentSignature);
       setFilter("all");
       setSearch("");
-      setSelectedKey(
-        (result.items.find((i) => i.status !== "equal") ?? result.items[0])
-          ?.key ?? null,
-      );
+      setSelectedKey(null);
       setEditText(false);
     } catch (e) {
       notifyError(e);
@@ -255,8 +255,7 @@ export default function App() {
       ),
     [report, filter, search],
   );
-  const selected =
-    visibleItems.find((i) => i.key === selectedKey) ?? visibleItems[0];
+  const selected = visibleItems.find((i) => i.key === selectedKey);
   const filePages = usePagination(
     visibleItems,
     JSON.stringify([report?.id, filter, search]),
@@ -711,6 +710,12 @@ export default function App() {
                     </span>
                     <p>在独立差分窗口中查看文件、导航、归档 Tab 与合并操作。</p>
                     <button
+                      className="text-button"
+                      onClick={() => setSelectedKey(null)}
+                    >
+                      返回差分一览
+                    </button>
+                    <button
                       className="button primary"
                       onClick={() =>
                         api.openDiff?.({
@@ -729,9 +734,67 @@ export default function App() {
                     </button>
                   </div>
                 ) : (
-                  <div className="detail-empty">
-                    <Search size={30} />
-                    <p>选择其他筛选条件查看结果</p>
+                  <div className="comparison-overview archive-overview">
+                    <div className="overview-heading">
+                      <div>
+                        <h2>差分一览</h2>
+                        <p>先查看全部比较结果，双击文件进入独立差分窗口。</p>
+                      </div>
+                      <button
+                        className="button primary"
+                        onClick={() => api.openDiff?.({ reportId: report.id })}
+                      >
+                        打开独立差分窗口
+                      </button>
+                    </div>
+                    <Pagination paging={filePages} label="差分一览分页" />
+                    <table className="overview-table">
+                      <thead>
+                        <tr>
+                          <th>文件 / 路径</th>
+                          <th>类型</th>
+                          <th>状态</th>
+                          <th>操作</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filePages.rows.map((item) => (
+                          <tr
+                            key={item.key}
+                            onDoubleClick={() =>
+                              api.openDiff?.({
+                                reportId: report.id,
+                                itemKey: item.key,
+                              })
+                            }
+                          >
+                            <td>{item.path}</td>
+                            <td>{TYPE_LABELS[item.type] || item.type}</td>
+                            <td>
+                              <span className={`status-pill ${item.status}`}>
+                                {LABELS[item.status]}
+                              </span>
+                            </td>
+                            <td>
+                              <button
+                                className="text-button"
+                                onClick={() =>
+                                  api.openDiff?.({
+                                    reportId: report.id,
+                                    itemKey: item.key,
+                                  })
+                                }
+                              >
+                                查看差分
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    {!visibleItems.length && (
+                      <div className="detail-empty">没有符合条件的条目</div>
+                    )}
                   </div>
                 )}
               </div>
@@ -754,7 +817,7 @@ export default function App() {
           <span className="footer-divider">/</span>本地差异引擎
         </span>
         <span>
-          只读比较，源文件保持不变
+          本地比较，合并后手动保存
           <ShieldCheck size={13} />
           <span className="footer-divider">·</span>Windows 优先
         </span>
@@ -893,21 +956,36 @@ export function Detail({ item }) {
         .filter((i) => i !== -1),
     [rows],
   );
-  useEffect(() => {
-    const navigate = (event) => {
-      const index = Number(event.detail);
-      setLimit((n) => Math.max(n, index + 100));
-      setTimeout(
-        () =>
-          scroll.current
-            ?.querySelector(`[data-row="${index}"]`)
-            ?.scrollIntoView({ block: "center", behavior: "smooth" }),
-        30,
-      );
-    };
-    window.addEventListener("wiimerge-jump", navigate);
-    return () => window.removeEventListener("wiimerge-jump", navigate);
-  }, []);
+  const navigation = useMemo(
+    () =>
+      d?.kind === "excel"
+        ? excelNavigation(d, rows, sheet)
+        : { ranges: [], leftTotal: 1, rightTotal: 1 },
+    [d, rows, sheet],
+  );
+  const positionAt = useMemo(
+    () => (index) => navigation.ranges[index],
+    [navigation],
+  );
+  const viewport = useDiffViewport(scroll, {
+    selector: "[data-row]",
+    attribute: "data-row",
+    positionAt,
+    leftTotal: navigation.leftTotal,
+    rightTotal: navigation.rightTotal,
+    version: limit,
+  });
+  const selectRow = (rowIndex) => {
+    setCursor(changes.indexOf(rowIndex));
+    setLimit((n) => Math.max(n, rowIndex + 100));
+    setTimeout(
+      () =>
+        scroll.current
+          ?.querySelector(`[data-row="${rowIndex}"]`)
+          ?.scrollIntoView({ block: "center", behavior: "smooth" }),
+      30,
+    );
+  };
   const jump = (step) => {
     if (!changes.length) return;
     const index =
@@ -917,13 +995,18 @@ export function Detail({ item }) {
             : changes.length - 1
           : (cursor + step + changes.length) % changes.length,
       rowIndex = changes[index];
-    setCursor(index);
-    setLimit((n) => Math.max(n, rowIndex + 100));
-    setTimeout(() => {
-      const node = scroll.current?.querySelector(`[data-row="${rowIndex}"]`);
-      node?.scrollIntoView({ behavior: "smooth", block: "center" });
-    }, 30);
+    selectRow(rowIndex);
   };
+  useEffect(() => {
+    const key = (event) => {
+      if (d?.kind === "excel" && event.key === "F7") {
+        event.preventDefault();
+        jump(event.shiftKey ? -1 : 1);
+      }
+    };
+    window.addEventListener("keydown", key);
+    return () => window.removeEventListener("keydown", key);
+  }, [d, changes, cursor]);
   return (
     <>
       <div className="detail-header">
@@ -1022,176 +1105,217 @@ export function Detail({ item }) {
           ))}
         </div>
       )}
-      <div className="diff-scroll" ref={scroll}>
-        {item.error ? (
-          <div className="detail-empty error-detail">
-            <CircleAlert size={32} />
-            <h3>此条目未能比较</h3>
-            <p>{item.error}</p>
-            <small>该条目不会计入“一致”，请修正输入后重新比较。</small>
-          </div>
-        ) : d?.kind === "text" ? (
-          <table className={`text-diff ${wrap ? "wrap" : "nowrap"}`}>
-            <colgroup>
-              <col className="line-col" />
-              <col className="content-col" />
-              <col className="line-col" />
-              <col className="content-col" />
-            </colgroup>
-            <thead>
-              <tr>
-                <th colSpan={2}>
-                  <span className="side-tag left">A</span>
-                  {item.leftPath ?? "左侧不存在"}
-                  <span>{d.leftLines} 行</span>
-                </th>
-                <th colSpan={2}>
-                  <span className="side-tag right">B</span>
-                  {item.rightPath ?? "右侧不存在"}
-                  <span>{d.rightLines} 行</span>
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.slice(0, limit).map((r, i) => (
-                <tr
-                  key={i}
-                  data-row={i}
-                  className={`${r.status} ${changes[cursor] === i ? "focused-row" : ""}`}
-                >
-                  <td className="line-number">{r.leftLine ?? ""}</td>
-                  <td
-                    className={`code-cell ${r.left === null ? "missing" : ""}`}
-                  >
-                    <span className="line-marker">
-                      {r.status === "removed" || r.status === "changed"
-                        ? "−"
-                        : " "}
-                    </span>
-                    {r.status === "changed" ? (
-                      <CharacterDiff
-                        left={r.left}
-                        right={r.right}
-                        side="left"
-                      />
-                    ) : (
-                      r.left
-                    )}
-                  </td>
-                  <td className="line-number">{r.rightLine ?? ""}</td>
-                  <td
-                    className={`code-cell ${r.right === null ? "missing" : ""}`}
-                  >
-                    <span className="line-marker">
-                      {r.status === "added" || r.status === "changed"
-                        ? "+"
-                        : " "}
-                    </span>
-                    {r.status === "changed" ? (
-                      <CharacterDiff
-                        left={r.left}
-                        right={r.right}
-                        side="right"
-                      />
-                    ) : (
-                      r.right
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        ) : d?.kind === "excel" ? (
-          <table className="excel-diff">
-            <thead>
-              <tr>
-                <th>工作表 / 位置</th>
-                <th>状态</th>
-                <th>左侧值</th>
-                <th>右侧值</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.slice(0, limit).map((r, i) => (
-                <tr
-                  key={i}
-                  data-row={i}
-                  className={`${r.status} ${changes[cursor] === i ? "focused-row" : ""}`}
-                >
-                  <td>
-                    <b>{r.sheet}</b>
-                    <small>
-                      {r.column}
-                      {r.leftRow ?? "—"} → {r.column}
-                      {r.rightRow ?? "—"}
-                      {r.key && <span>主键 {r.key}</span>}
-                    </small>
-                  </td>
-                  <td>
-                    <span className={`status-pill ${r.status}`}>
-                      {LABELS[r.status]}
-                    </span>
-                  </td>
-                  <td>{r.left}</td>
-                  <td>{r.right}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        ) : d?.kind === "directory" ? (
-          <div className="detail-empty">
-            <Folder size={34} />
-            <h3>空文件夹比较</h3>
-            <p>{d.note}</p>
-          </div>
-        ) : d?.kind === "binary" ? (
-          <div className="binary-detail">
-            <div className="binary-icon">
-              <File size={34} />
-            </div>
-            <h3>
-              {item.status === "equal" ? "文件内容完全一致" : "二进制内容比较"}
-            </h3>
-            <p>{d.note}</p>
-            <div className="hash-cards">
-              {["left", "right"].map((side, i) => (
-                <div key={side}>
-                  <label>
-                    <span className={`side-tag ${side}`}>{i ? "B" : "A"}</span>
-                    {i ? "右侧" : "左侧"}
-                    <span>{bytes(item[`${side}Size`])}</span>
-                  </label>
-                  <small>SHA-256</small>
-                  <code>{d[`${side}Hash`] ?? "文件不存在"}</code>
-                </div>
-              ))}
-            </div>
-          </div>
-        ) : null}
-        {!item.error && ["text", "excel"].includes(d?.kind) && !rows.length && (
-          <div className="detail-empty">
-            <CheckCheck size={32} />
-            <h3>
-              {d?.equal ? "按当前规则，内容一致" : "此视图没有单元格差异"}
-            </h3>
-            <p>
-              {d?.kind === "excel"
-                ? "可在上方查看新增、移除的工作表。样式、图表和宏不参与比较。"
-                : diffOnly
-                  ? "当前没有需要显示的不同内容。"
-                  : "两侧均为空文本或内容已被规则忽略。"}
-            </p>
-          </div>
+      <div className="detail-with-map">
+        {d?.kind === "excel" && (
+          <aside className="hunk-navigation excel-navigation">
+            <b>
+              差分导航 <span>{rows.length}</span>
+            </b>
+            <DiffMap
+              navigation={navigation}
+              current={cursor}
+              onJump={selectRow}
+              viewport={viewport}
+            />
+            {rows.slice(0, limit).map((c, i) => (
+              <button
+                key={i}
+                className={cursor === i ? "active" : ""}
+                onClick={() => selectRow(i)}
+              >
+                <strong>
+                  {c.sheet} · {c.column}
+                  {c.leftRow || c.rightRow}
+                </strong>
+                <small>
+                  {c.left} → {c.right}
+                </small>
+              </button>
+            ))}
+            {rows.length > limit && (
+              <button onClick={() => setLimit((n) => n + 500)}>
+                继续显示差分
+              </button>
+            )}
+          </aside>
         )}
-        {rows.length > limit && (
-          <button
-            className="load-more"
-            onClick={() => setLimit((v) => v + 500)}
-          >
-            继续加载 500 行（已显示 {Math.min(limit, rows.length)} /{" "}
-            {rows.length}）<ChevronDown size={14} />
-          </button>
-        )}
+        <div className="diff-scroll" ref={scroll}>
+          {item.error ? (
+            <div className="detail-empty error-detail">
+              <CircleAlert size={32} />
+              <h3>此条目未能比较</h3>
+              <p>{item.error}</p>
+              <small>该条目不会计入“一致”，请修正输入后重新比较。</small>
+            </div>
+          ) : d?.kind === "text" ? (
+            <table className={`text-diff ${wrap ? "wrap" : "nowrap"}`}>
+              <colgroup>
+                <col className="line-col" />
+                <col className="content-col" />
+                <col className="line-col" />
+                <col className="content-col" />
+              </colgroup>
+              <thead>
+                <tr>
+                  <th colSpan={2}>
+                    <span className="side-tag left">A</span>
+                    {item.leftPath ?? "左侧不存在"}
+                    <span>{d.leftLines} 行</span>
+                  </th>
+                  <th colSpan={2}>
+                    <span className="side-tag right">B</span>
+                    {item.rightPath ?? "右侧不存在"}
+                    <span>{d.rightLines} 行</span>
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.slice(0, limit).map((r, i) => (
+                  <tr
+                    key={i}
+                    data-row={i}
+                    className={`${r.status} ${changes[cursor] === i ? "focused-row" : ""}`}
+                  >
+                    <td className="line-number">{r.leftLine ?? ""}</td>
+                    <td
+                      className={`code-cell ${r.left === null ? "missing" : ""}`}
+                    >
+                      <span className="line-marker">
+                        {r.status === "removed" || r.status === "changed"
+                          ? "−"
+                          : " "}
+                      </span>
+                      {r.status === "changed" ? (
+                        <CharacterDiff
+                          left={r.left}
+                          right={r.right}
+                          side="left"
+                        />
+                      ) : (
+                        r.left
+                      )}
+                    </td>
+                    <td className="line-number">{r.rightLine ?? ""}</td>
+                    <td
+                      className={`code-cell ${r.right === null ? "missing" : ""}`}
+                    >
+                      <span className="line-marker">
+                        {r.status === "added" || r.status === "changed"
+                          ? "+"
+                          : " "}
+                      </span>
+                      {r.status === "changed" ? (
+                        <CharacterDiff
+                          left={r.left}
+                          right={r.right}
+                          side="right"
+                        />
+                      ) : (
+                        r.right
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : d?.kind === "excel" ? (
+            <table className="excel-diff">
+              <thead>
+                <tr>
+                  <th>工作表 / 位置</th>
+                  <th>状态</th>
+                  <th>左侧值</th>
+                  <th>右侧值</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.slice(0, limit).map((r, i) => (
+                  <tr
+                    key={i}
+                    data-row={i}
+                    className={`${r.status} ${changes[cursor] === i ? "focused-row" : ""}`}
+                  >
+                    <td>
+                      <b>{r.sheet}</b>
+                      <small>
+                        {r.column}
+                        {r.leftRow ?? "—"} → {r.column}
+                        {r.rightRow ?? "—"}
+                        {r.key && <span>主键 {r.key}</span>}
+                      </small>
+                    </td>
+                    <td>
+                      <span className={`status-pill ${r.status}`}>
+                        {LABELS[r.status]}
+                      </span>
+                    </td>
+                    <td>{r.left}</td>
+                    <td>{r.right}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : d?.kind === "directory" ? (
+            <div className="detail-empty">
+              <Folder size={34} />
+              <h3>空文件夹比较</h3>
+              <p>{d.note}</p>
+            </div>
+          ) : d?.kind === "binary" ? (
+            <div className="binary-detail">
+              <div className="binary-icon">
+                <File size={34} />
+              </div>
+              <h3>
+                {item.status === "equal"
+                  ? "文件内容完全一致"
+                  : "二进制内容比较"}
+              </h3>
+              <p>{d.note}</p>
+              <div className="hash-cards">
+                {["left", "right"].map((side, i) => (
+                  <div key={side}>
+                    <label>
+                      <span className={`side-tag ${side}`}>
+                        {i ? "B" : "A"}
+                      </span>
+                      {i ? "右侧" : "左侧"}
+                      <span>{bytes(item[`${side}Size`])}</span>
+                    </label>
+                    <small>SHA-256</small>
+                    <code>{d[`${side}Hash`] ?? "文件不存在"}</code>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
+          {!item.error &&
+            ["text", "excel"].includes(d?.kind) &&
+            !rows.length && (
+              <div className="detail-empty">
+                <CheckCheck size={32} />
+                <h3>
+                  {d?.equal ? "按当前规则，内容一致" : "此视图没有单元格差异"}
+                </h3>
+                <p>
+                  {d?.kind === "excel"
+                    ? "可在上方查看新增、移除的工作表。样式、图表和宏不参与比较。"
+                    : diffOnly
+                      ? "当前没有需要显示的不同内容。"
+                      : "两侧均为空文本或内容已被规则忽略。"}
+                </p>
+              </div>
+            )}
+          {rows.length > limit && (
+            <button
+              className="load-more"
+              onClick={() => setLimit((v) => v + 500)}
+            >
+              继续加载 500 行（已显示 {Math.min(limit, rows.length)} /{" "}
+              {rows.length}）<ChevronDown size={14} />
+            </button>
+          )}
+        </div>
       </div>
       <div className="detail-footer">
         <div>
@@ -1447,8 +1571,8 @@ function RulesPanel({ initial, onClose, onApply }) {
             <div className="rule-help">
               <Info size={15} />
               <p>
-                支持 .xlsx / .xlsm 的单元格内容；旧版 .xls 请另存为
-                .xlsx。样式、图表、宏及合并布局不参与比较。归档支持
+                支持 .xls / .xlsx / .xlsm 的单元格内容和跨格式比较。
+                样式、图表、宏及合并布局不参与比较。归档支持
                 ZIP、WAR、JAR，暂不支持 RAR、7z 或加密文件。
               </p>
             </div>

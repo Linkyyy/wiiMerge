@@ -18,6 +18,8 @@ export function textModel(left, right) {
       right: r === null ? null : b[r],
       leftLine: l === null ? null : l + 1,
       rightLine: r === null ? null : r + 1,
+      leftOffset: l ?? ai,
+      rightOffset: r ?? bi,
     });
   for (let i = 0; i < chunks.length; i++) {
     const c = chunks[i];
@@ -44,7 +46,7 @@ export function textModel(left, right) {
       );
     hunks.push({ ...h, leftEnd: ai, rightEnd: bi, endRow: rows.length });
   }
-  return { rows, hunks };
+  return { rows, hunks, leftLines: a.length, rightLines: b.length };
 }
 export function adoptHunk(left, right, hunk, from) {
   if (!["left", "right"].includes(from)) throw new Error("无效的合并方向");

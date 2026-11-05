@@ -61,7 +61,10 @@
     await choose(1, "b.txt");
     click("开始比较");
     await wait(
-      () => document.querySelector(".result-preview"),
+      () =>
+        document
+          .querySelector(".comparison-overview .overview-table")
+          ?.textContent.includes("b.txt"),
       "Overview missing",
     );
     await child();
@@ -83,8 +86,26 @@
     await choose(1, "after");
     click("开始比较");
     await wait(
-      () => document.querySelector(".result-preview"),
+      () =>
+        document
+          .querySelector(".comparison-overview .overview-table")
+          ?.textContent.includes("app.war"),
       "Folder overview missing",
+    );
+    await child();
+    [...document.querySelectorAll('[role="tab"]')]
+      .find((b) => b.textContent === "文件比较")
+      .click();
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    await choose(0, "legacy.xls");
+    await choose(1, "modern.xlsx");
+    click("开始比较");
+    await wait(
+      () =>
+        document
+          .querySelector(".comparison-overview .overview-table")
+          ?.textContent.includes("modern.xlsx"),
+      "XLS overview missing",
     );
     await child();
     await window.wiiMerge.windowAction("maximize");

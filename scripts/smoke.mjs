@@ -2,13 +2,19 @@ import { _electron as electron, expect } from "@playwright/test";
 import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
-import { zip } from "../tests/helpers.mjs";
+import { zip, legacyWorkbook, workbook } from "../tests/helpers.mjs";
 const root = path.resolve(import.meta.dirname, ".."),
   tmp = await fs.mkdtemp(path.join(os.tmpdir(), "wiimerge-merge-ui-"));
 const a = path.join(tmp, "a.txt"),
   b = path.join(tmp, "b.txt");
-await fs.writeFile(a, "head\nleft\nanchor\nleft-end\n");
-await fs.writeFile(b, "head\r\nright\r\nanchor\r\nright-end\r\n");
+const before = Array.from({ length: 2000 }, (_, i) => `line-${i}`),
+  after = [...before];
+before[5] = "left-first";
+after[5] = "right-first";
+before[1850] = "left-last";
+after[1850] = "right-last";
+await fs.writeFile(a, before.join("\n") + "\n");
+await fs.writeFile(b, after.join("\r\n") + "\r\n");
 let app;
 try {
   app = await electron.launch({
@@ -45,14 +51,32 @@ try {
       .click();
   }
   await page.getByRole("button", { name: "开始比较", exact: true }).click();
-  await page.locator(".result-preview").waitFor();
+  await page.locator(".comparison-overview").waitFor();
+  await expect(page.locator(".comparison-overview h2")).toHaveText("差分一览");
+  await fs.mkdir(path.join(root, "artifacts"), { recursive: true });
+  await page.screenshot({
+    path: path.join(root, "artifacts/comparison-overview.png"),
+  });
   const created = app.waitForEvent("window");
   await page.getByRole("button", { name: "打开独立差分窗口" }).click();
   const diff = await created;
   await diff.setViewportSize({ width: 1440, height: 940 });
+  await expect(diff.locator(".archive-overview")).toBeVisible();
+  await expect(diff.locator(".merge-table")).toHaveCount(0);
+  await diff.getByRole("button", { name: "打开差分", exact: true }).click();
   await diff.locator(".merge-table").waitFor();
   await expect(diff.locator(".hunk-navigation>button")).toHaveCount(2);
-  await diff.locator(".hunk-navigation>button").nth(1).click();
+  const visual = diff.getByRole("slider", { name: "右侧差异位置" });
+  await visual.click({ position: { x: 10, y: 175 } });
+  await expect(visual).toHaveAttribute("aria-valuenow", "1851");
+  await expect(diff.locator('[data-merge-row="1850"]')).toBeInViewport();
+  await expect
+    .poll(() => diff.locator(".merge-scroll").evaluate((e) => e.scrollTop))
+    .toBeGreaterThan(0);
+  await fs.mkdir(path.join(root, "artifacts"), { recursive: true });
+  await diff.screenshot({
+    path: path.join(root, "artifacts/diff-minimap-text.png"),
+  });
   await diff.getByRole("button", { name: "使用左边", exact: true }).click();
   await expect(diff.locator(".hunk-navigation>button")).toHaveCount(1);
   await diff.getByRole("button", { name: "使用左边", exact: true }).click();
@@ -63,9 +87,7 @@ try {
     .getByRole("button", { name: "保存", exact: true })
     .click();
   await expect(diff.getByRole("status")).toContainText("已保存");
-  if (
-    (await fs.readFile(b, "utf8")) !== "head\r\nleft\r\nanchor\r\nleft-end\r\n"
-  )
+  if ((await fs.readFile(b, "utf8")) !== before.join("\r\n") + "\r\n")
     throw new Error("Merged file or CRLF is incorrect");
   const archiveA = path.join(tmp, "before"),
     archiveB = path.join(tmp, "after");
@@ -93,9 +115,11 @@ try {
       .click();
   }
   await page.getByRole("button", { name: "开始比较", exact: true }).click();
-  await page.locator(".result-preview").waitFor();
+  await expect(
+    page.locator(".comparison-overview .overview-table"),
+  ).toContainText("app.war");
   const next = app.waitForEvent("window");
-  await page.getByRole("button", { name: "浏览完整目录与归档" }).click();
+  await page.getByRole("button", { name: "打开独立差分窗口" }).click();
   const archives = await next;
   await archives
     .locator(".nav-tree-row")
@@ -152,7 +176,7 @@ try {
   await expect(page.locator(".file-item")).toHaveCount(1);
   await page.getByRole("textbox", { name: "搜索文件", exact: true }).fill("");
   const another = app.waitForEvent("window");
-  await page.getByRole("button", { name: "浏览完整目录与归档" }).click();
+  await page.getByRole("button", { name: "打开独立差分窗口" }).click();
   const large = await another;
   await expect(large.locator(".overview-table tbody tr")).toHaveCount(200);
   await large
@@ -183,8 +207,49 @@ try {
   )
     throw new Error("Pagination or search truncated the exported report");
   await large.screenshot({ path: path.join(root, "artifacts/many-files.png") });
+  const xlA = path.join(tmp, "legacy.xls"),
+    xlB = path.join(tmp, "modern.xlsx");
+  const xlLeft = Array.from({ length: 2000 }, (_, i) => [i, `项目-${i}`]),
+    xlRight = xlLeft.map((row) => [...row]);
+  xlRight[5][1] = "新版早期值";
+  xlRight[1850][1] = "新版末尾值";
+  await fs.writeFile(xlA, legacyWorkbook({ 数据: xlLeft }));
+  await fs.writeFile(xlB, await workbook({ 数据: xlRight }));
+  await page.getByRole("tab", { name: "文件比较", exact: true }).click();
+  for (const [index, filename] of [xlA, xlB].entries()) {
+    await app.evaluate(({ dialog }, filename) => {
+      dialog.showOpenDialog = async () => ({
+        canceled: false,
+        filePaths: [filename],
+      });
+    }, filename);
+    await page
+      .getByRole("button", { name: "选择文件", exact: true })
+      .nth(index)
+      .click();
+  }
+  await page.getByRole("button", { name: "开始比较", exact: true }).click();
+  await expect(
+    page.locator(".comparison-overview .overview-table"),
+  ).toContainText("modern.xlsx");
+  const xlWindow = app.waitForEvent("window");
+  await page.getByRole("button", { name: "查看差分", exact: true }).click();
+  const excel = await xlWindow;
+  await expect(excel.locator(".excel-diff tbody tr")).toHaveCount(2);
+  await excel
+    .getByRole("slider", { name: "右侧差异位置" })
+    .click({ position: { x: 10, y: 175 } });
+  await expect(
+    excel.getByRole("slider", { name: "右侧差异位置" }),
+  ).toHaveAttribute("aria-valuenow", "1851");
+  await expect(excel.locator(".excel-diff tr.focused-row")).toContainText(
+    "新版末尾值",
+  );
+  await excel.screenshot({
+    path: path.join(root, "artifacts/diff-minimap-xls.png"),
+  });
   console.log(
-    "PASS: integrated chrome, separate windows, merge/save, WAR/JAR tabs, paginated file lists, progressive tree, global search and complete HTML report",
+    "PASS: overview first, visual text/Excel navigation, XLS/XLSX comparison, merge/save, archive Tabs, pagination and complete export",
   );
 } finally {
   await app?.close();

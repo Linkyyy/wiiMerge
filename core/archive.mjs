@@ -4,7 +4,7 @@ export const LIMITS = Object.freeze({
   depth: 3,
 });
 export const isArchive = (name) => /\.(zip|war|jar)$/i.test(name);
-export const isWorkbook = (name) => /\.(xlsx|xlsm)$/i.test(name);
+export const isWorkbook = (name) => /\.(xls|xlsx|xlsm)$/i.test(name);
 
 export async function readArchive(buffer, { collect = true } = {}) {
   const zip = await new Promise((resolve, reject) =>

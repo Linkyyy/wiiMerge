@@ -316,6 +316,16 @@ export class Workspace {
     )
       throw new Error("该条目不支持整文件替换");
     const to = from === "left" ? "right" : "left";
+    if (
+      item.type === "excel" &&
+      item.leftPath &&
+      item.rightPath &&
+      path.extname(item.leftPath).toLowerCase() !==
+        path.extname(item.rightPath).toLowerCase()
+    )
+      throw new Error(
+        "不同 Excel 格式支持比较；整文件采用需要相同格式，避免文件扩展名与内容不一致",
+      );
     if (!item[from + "Path"])
       throw new Error("来源文件不存在；不会隐式删除目标文件");
     const a = await sideSource(

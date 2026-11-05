@@ -3,6 +3,7 @@ import yazl from "yazl";
 import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
+import { utils, write } from "@e965/xlsx";
 export async function temporary(t) {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "wiimerge-test-"));
   t.after(() => fs.rm(dir, { recursive: true, force: true }));
@@ -31,4 +32,10 @@ export async function workbook(sheets) {
     sheet.addRows(rows);
   }
   return Buffer.from(await wb.xlsx.writeBuffer());
+}
+export function legacyWorkbook(sheets, bookType = "biff8") {
+  const book = utils.book_new();
+  for (const [name, rows] of Object.entries(sheets))
+    utils.book_append_sheet(book, utils.aoa_to_sheet(rows), name);
+  return Buffer.from(write(book, { type: "buffer", bookType }));
 }

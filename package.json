@@ -1,6 +1,6 @@
 {
   "name": "wiimerge",
-  "version": "0.2.2",
+  "version": "0.3.0",
   "description": "本地文件、文本、Excel 与归档差异比较工具",
   "private": true,
   "type": "module",
@@ -64,6 +64,7 @@
     "npmRebuild": false
   },
   "dependencies": {
+    "@e965/xlsx": "0.20.3",
     "diff": "^9.0.0",
     "exceljs": "^4.4.0",
     "iconv-lite": "^0.7.3",

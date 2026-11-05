@@ -23,14 +23,50 @@
     const report = await window.wiiMerge.getReport(
       new URLSearchParams(location.search).get("report"),
     );
-    if (report.mode === "files") {
+    await wait(
+      () => document.querySelector(".archive-overview"),
+      "Overview must be shown first",
+    );
+    if (document.querySelector(".merge-table"))
+      throw new Error("File opened before overview");
+    if (report.mode === "files" && report.items[0].type === "excel") {
+      document.querySelector(".overview-table tbody button").click();
+      await wait(
+        () => document.querySelector(".excel-diff"),
+        "XLS details missing",
+      );
+      const slider = document.querySelector(".map-track.map-right");
+      if (!slider) throw new Error("Excel visual navigation missing");
+      slider.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "End", bubbles: true }),
+      );
+      await wait(
+        () =>
+          document
+            .querySelector(".excel-diff .focused-row")
+            ?.textContent.includes("新版末尾值"),
+        "Excel visual jump failed",
+      );
+      completed.push(
+        "XLS/XLSX cross-format comparison and visual cell navigation",
+      );
+    } else if (report.mode === "files") {
+      document.querySelector(".overview-table tbody button").click();
       await wait(
         () => document.querySelector(".merge-table"),
         "Text diff window missing",
       );
       if (document.querySelectorAll(".hunk-navigation>button").length !== 2)
         throw new Error("Expected two navigation hunks");
-      document.querySelectorAll(".hunk-navigation>button")[1].click();
+      const slider = document.querySelector(".map-track.map-right");
+      if (!slider) throw new Error("Text visual navigation missing");
+      slider.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "End", bubbles: true }),
+      );
+      await wait(
+        () => slider.getAttribute("aria-valuenow") === "1851",
+        "Text visual jump failed",
+      );
       for (let n = 0; n < 2; n++) {
         [...document.querySelectorAll(".merge-toolbar button")]
           .find((b) => b.textContent.trim() === "使用左边")
@@ -67,7 +103,7 @@
       if (!archive) throw new Error("WAR container missing");
       archive.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
       await wait(
-        () => document.querySelectorAll(".document-tabs>div").length >= 3,
+        () => document.querySelectorAll(".document-tabs>div").length >= 2,
         "Archive Tab missing",
       );
       const open = [...document.querySelectorAll(".overview-table tr")]

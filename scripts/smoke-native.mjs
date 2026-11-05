@@ -159,8 +159,8 @@ try {
     right,
   );
   await page.getByRole("button", { name: "开始比较", exact: true }).click();
-  await page.locator(".result-preview").waitFor();
-  await page.getByRole("button", { name: "浏览完整目录与归档" }).click();
+  await page.locator(".comparison-overview").waitFor();
+  await page.getByRole("button", { name: "打开独立差分窗口" }).click();
   await expect.poll(() => windows.length).toBe(1);
   const diff = windows[0];
   await diff.locator(".nav-tree-row").filter({ hasText: "app.war" }).dblclick();

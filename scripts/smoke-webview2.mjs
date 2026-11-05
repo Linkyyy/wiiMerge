@@ -3,7 +3,7 @@ import path from "node:path";
 import os from "node:os";
 import { spawn } from "node:child_process";
 import ExcelJS from "exceljs";
-import { zip, workbook } from "../tests/helpers.mjs";
+import { zip, workbook, legacyWorkbook } from "../tests/helpers.mjs";
 
 const root = path.resolve(import.meta.dirname, "..");
 const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "wiimerge-native-ui-"));
@@ -13,10 +13,16 @@ const a = path.join(tmp, "a.txt"),
   b = path.join(tmp, "b.txt"),
   left = path.join(tmp, "before"),
   right = path.join(tmp, "after");
-const longA = path.join(tmp, "long-a.txt"),
-  longB = path.join(tmp, "long-b.txt");
-await fs.writeFile(a, "head\nleft-first\nanchor\nleft-last\n");
-await fs.writeFile(b, "head\r\nright-first\r\nanchor\r\nright-last\r\n");
+const xlA = path.join(tmp, "legacy.xls"),
+  xlB = path.join(tmp, "modern.xlsx");
+const before = Array.from({ length: 2000 }, (_, i) => `line-${i}`),
+  after = [...before];
+before[5] = "left-first";
+after[5] = "right-first";
+before[1850] = "left-last";
+after[1850] = "right-last";
+await fs.writeFile(a, before.join("\n") + "\n");
+await fs.writeFile(b, after.join("\r\n") + "\r\n");
 await fs.mkdir(left);
 await fs.mkdir(right);
 await fs.writeFile(
@@ -29,8 +35,12 @@ await fs.writeFile(
 );
 for (const dir of [left, right])
   await fs.writeFile(path.join(dir, "same.txt"), "same");
-await fs.writeFile(longA, "left\n".repeat(10000));
-await fs.writeFile(longB, "right\n".repeat(10000));
+const xlLeft = Array.from({ length: 2000 }, (_, i) => [i, `项目-${i}`]),
+  xlRight = xlLeft.map((row) => [...row]);
+xlRight[5][1] = "新版早期值";
+xlRight[1850][1] = "新版末尾值";
+await fs.writeFile(xlA, legacyWorkbook({ 数据: xlLeft }));
+await fs.writeFile(xlB, await workbook({ 数据: xlRight }));
 const fixtureFile = path.join(tmp, "dialogs.json"),
   resultFile = path.join(tmp, "result.json");
 const html = path.join(tmp, "report.html"),
@@ -51,8 +61,8 @@ await fs.writeFile(
     open1: b,
     open2: left,
     open3: right,
-    open4: longA,
-    open5: longB,
+    open4: xlA,
+    open5: xlB,
     save0: html,
     save1: xlsx,
   }),
@@ -83,7 +93,7 @@ try {
   }
   if (!result) throw new Error("Native UI test timed out");
   if (result.error) throw new Error(result.error);
-  if (result.completed.length !== 5)
+  if (result.completed.length !== 6)
     throw new Error("Some native checks did not execute");
   if (!result.frameless)
     throw new Error("Root window still has a system titlebar");
@@ -107,10 +117,7 @@ try {
     wb.getWorksheet("文本差异").rowCount < 2
   )
     throw new Error("Excel overview or details missing");
-  if (
-    (await fs.readFile(b, "utf8")) !==
-    "head\r\nleft-first\r\nanchor\r\nleft-last\r\n"
-  )
+  if ((await fs.readFile(b, "utf8")) !== before.join("\r\n") + "\r\n")
     throw new Error("Merge did not preserve target CRLF");
   console.log(
     "PASS: exported reports independently read and actual native screenshot captured",

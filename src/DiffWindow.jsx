@@ -18,6 +18,9 @@ import Titlebar from "./Titlebar.jsx";
 import Pagination, { PAGE_SIZE, usePagination } from "./Pagination.jsx";
 import { Detail, CharacterDiff } from "./App.jsx";
 import { adoptHunk, textModel } from "../core/hunks.mjs";
+import { textNavigation } from "../core/navigation.mjs";
+import DiffMap from "./DiffMap.jsx";
+import useDiffViewport from "./useDiffViewport.js";
 
 const api = window.wiiMerge;
 const labels = {
@@ -156,6 +159,12 @@ export default function DiffWindow() {
   }, []);
   const tab = tabs.find((t) => t.id === active) || tabs[0];
   const item = report?.items.find((i) => i.key === tab.itemKey);
+  const mixedExcel =
+    item?.type === "excel" &&
+    item.leftPath &&
+    item.rightPath &&
+    item.leftPath.split(".").pop().toLowerCase() !==
+      item.rightPath.split(".").pop().toLowerCase();
   const doc = docs[tab.itemKey];
   const scoped = useMemo(
     () =>
@@ -430,39 +439,27 @@ export default function DiffWindow() {
         ) : (
           <div className="readonly-document">
             <div className="whole-file-toolbar">
-              <span>Excel / 二进制采用整文件替换（保留原文件备份）</span>
-              <button disabled={busy} onClick={() => adoptWhole("left")}>
+              <span>
+                {mixedExcel
+                  ? "跨格式 Excel 比较：整文件采用需要两侧格式相同"
+                  : "Excel / 二进制采用整文件替换（保留原文件备份）"}
+              </span>
+              <button
+                disabled={busy || mixedExcel}
+                onClick={() => adoptWhole("left")}
+              >
                 整文件使用左边 →
               </button>
-              <button disabled={busy} onClick={() => adoptWhole("right")}>
+              <button
+                disabled={busy || mixedExcel}
+                onClick={() => adoptWhole("right")}
+              >
                 ← 整文件使用右边
               </button>
             </div>
-            <aside className="hunk-navigation">
-              <b>差分导航</b>
-              {item?.details?.changes?.slice(0, 1000).map((c, i) => (
-                <button
-                  key={i}
-                  onClick={() =>
-                    window.dispatchEvent(
-                      new CustomEvent("wiimerge-jump", { detail: i }),
-                    )
-                  }
-                >
-                  {c.sheet} · {c.column}
-                  {c.leftRow || c.rightRow}{" "}
-                  <small>
-                    {c.left} → {c.right}
-                  </small>
-                </button>
-              ))}
-              <p>
-                {item?.type === "excel"
-                  ? "Excel 支持单元格差分导航和整文件采用；文本支持按块合并。"
-                  : "该类型可使用上方整文件采用按钮。"}
-              </p>
-            </aside>
-            <div className="detail-panel">{item && <Detail item={item} />}</div>
+            <div className="detail-panel">
+              {item && <Detail key={item.key} item={item} />}
+            </div>
           </div>
         )}
       </div>
@@ -488,10 +485,34 @@ function TextEditor({ doc, change, save, busy }) {
       return { rows: [], hunks: [], error: e.message };
     }
   }, [doc.left, doc.right]);
+  const navigation = useMemo(() => textNavigation(model), [model]);
+  const positionAt = useMemo(
+    () => (index) => {
+      const row = model.rows[index];
+      return (
+        row && {
+          leftStart: row.leftOffset,
+          leftEnd: row.leftOffset + (row.leftLine ? 1 : 0),
+          rightStart: row.rightOffset,
+          rightEnd: row.rightOffset + (row.rightLine ? 1 : 0),
+        }
+      );
+    },
+    [model],
+  );
+  const viewport = useDiffViewport(scroll, {
+    selector: "[data-merge-row]",
+    attribute: "data-merge-row",
+    positionAt,
+    leftTotal: navigation.leftTotal,
+    rightTotal: navigation.rightTotal,
+    version: `${limit}:${editing}`,
+  });
   const current = Math.min(cursor, Math.max(model.hunks.length - 1, 0));
   function jump(index) {
     if (!model.hunks.length) return;
     const n = (index + model.hunks.length) % model.hunks.length;
+    setEditing(false);
     setCursor(n);
     setLimit((v) => Math.max(v, model.hunks[n].endRow + 30));
     setTimeout(
@@ -543,6 +564,12 @@ function TextEditor({ doc, change, save, busy }) {
         <b>
           差分导航 <span>{model.hunks.length}</span>
         </b>
+        <DiffMap
+          navigation={navigation}
+          current={current}
+          onJump={jump}
+          viewport={viewport}
+        />
         <div className="nav-prev-next">
           <button onClick={() => jump(current - 1)}>上一处</button>
           <button onClick={() => jump(current + 1)}>下一处</button>
