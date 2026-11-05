@@ -1,0 +1,43 @@
+name: Desktop validation
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+      - name: Linux desktop smoke
+        if: runner.os == 'Linux'
+        run: npm run test:desktop
+        env:
+          WIIMERGE_SMOKE_HEADLESS: "1"
+      - name: Build Windows portable application
+        if: runner.os == 'Windows'
+        run: npm run dist:win
+      - name: Windows packaged desktop smoke
+        if: runner.os == 'Windows'
+        run: npm run test:desktop
+        env:
+          WIIMERGE_TEST_EXECUTABLE: release/win-unpacked/wiiMerge.exe
+      - uses: actions/upload-artifact@v4
+        if: runner.os == 'Windows'
+        with:
+          name: wiiMerge-Windows-x64
+          path: release/*Windows-x64.exe
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: screenshots-${{ runner.os }}
+          path: artifacts/*.png

@@ -1,0 +1,84 @@
+{
+  "name": "wiimerge",
+  "version": "0.1.0",
+  "description": "本地文件、文本、Excel 与归档差异比较工具",
+  "private": true,
+  "type": "module",
+  "main": "electron/main.cjs",
+  "author": "wiiMerge",
+  "license": "MIT",
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "dev:ui": "vite --host 127.0.0.1",
+    "build": "vite build",
+    "start": "electron .",
+    "test": "node --test --test-isolation=none tests/*.test.mjs",
+    "test:desktop": "node scripts/smoke.mjs",
+    "pack": "npm run build && electron-builder --dir",
+    "dist:win": "npm run build && electron-builder --win portable --x64",
+    "dist:mac": "npm run build && electron-builder --mac dmg",
+    "dist:linux": "npm run build && electron-builder --linux AppImage",
+    "format": "prettier --write src core electron scripts tests *.js *.json *.html *.md .github/workflows/*.yml",
+    "format:check": "prettier --check src core electron scripts tests *.js *.json *.html *.md .github/workflows/*.yml"
+  },
+  "build": {
+    "appId": "io.wiimerge.desktop",
+    "productName": "wiiMerge",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "core/**/*",
+      "package.json",
+      "build/icon.png"
+    ],
+    "asar": true,
+    "win": {
+      "target": "portable",
+      "icon": "build/icon.ico",
+      "signExecutable": false
+    },
+    "mac": {
+      "target": "dmg",
+      "category": "public.app-category.developer-tools"
+    },
+    "linux": {
+      "target": "AppImage",
+      "category": "Development"
+    },
+    "icon": "build/icon.png",
+    "portable": {
+      "artifactName": "wiiMerge-${version}-Windows-x64.exe"
+    }
+  },
+  "dependencies": {
+    "diff": "^9.0.0",
+    "exceljs": "^4.4.0",
+    "iconv-lite": "^0.7.3",
+    "lucide-react": "^1.68.0",
+    "picomatch": "^4.0.7",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "safe-regex2": "^5.1.2",
+    "yauzl": "^3.4.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.64.1",
+    "@vitejs/plugin-react": "^6.2.1",
+    "electron": "^45.2.3",
+    "electron-builder": "^26.18.0",
+    "prettier": "^3.9.10",
+    "vite": "^8.3.5",
+    "yazl": "^3.3.1"
+  },
+  "overrides": {
+    "exceljs": {
+      "uuid": "11.1.1"
+    }
+  },
+  "engines": {
+    "node": ">=22.12.0"
+  }
+}
