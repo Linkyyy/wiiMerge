@@ -15,6 +15,7 @@ import {
   X,
 } from "lucide-react";
 import Titlebar from "./Titlebar.jsx";
+import Pagination, { PAGE_SIZE, usePagination } from "./Pagination.jsx";
 import { Detail, CharacterDiff } from "./App.jsx";
 import { adoptHunk, textModel } from "../core/hunks.mjs";
 
@@ -42,10 +43,12 @@ function treeFor(items, prefix = "") {
           name: part.replace(/!$/, ""),
           archive: part.endsWith("!"),
           children: new Map(),
-          items: [],
+          status: "equal",
         });
       node = node.children.get(part);
-      node.items.push(item);
+      if (item.status === "error") node.status = "error";
+      else if (node.status !== "error" && item.status !== "equal")
+        node.status = "changed";
       if (index === parts.length - 1) node.item = item;
       key += "/";
     });
@@ -53,17 +56,28 @@ function treeFor(items, prefix = "") {
   return root;
 }
 function Tree({ node, level = 0, open }) {
-  const [expanded, setExpanded] = useState(level < 2);
-  if (!node.name)
-    return [...node.children.values()].map((n) => (
-      <Tree key={n.key} node={n} level={0} open={open} />
-    ));
+  const [expanded, setExpanded] = useState(false);
+  const [limit, setLimit] = useState(PAGE_SIZE);
+  const children = [...node.children.values()];
+  const renderChildren = (depth) => (
+    <>
+      {children.slice(0, limit).map((n) => (
+        <Tree key={n.key} node={n} level={depth} open={open} />
+      ))}
+      {children.length > limit && (
+        <button
+          className="tree-load-more"
+          style={{ paddingLeft: 10 + depth * 15 }}
+          onClick={() => setLimit((n) => n + PAGE_SIZE)}
+        >
+          继续显示（{limit} / {children.length}）
+        </button>
+      )}
+    </>
+  );
+  if (!node.name) return renderChildren(0);
   const branch = node.children.size > 0,
-    status = node.items.some((i) => i.status === "error")
-      ? "error"
-      : node.items.some((i) => i.status !== "equal")
-        ? "changed"
-        : "equal";
+    status = node.status;
   return (
     <>
       <button
@@ -92,11 +106,7 @@ function Tree({ node, level = 0, open }) {
         <span>{node.name}</span>
         <i className={`status-dot ${node.item?.status || status}`} />
       </button>
-      {branch &&
-        expanded &&
-        [...node.children.values()].map((n) => (
-          <Tree key={n.key} node={n} level={level + 1} open={open} />
-        ))}
+      {branch && expanded && renderChildren(level + 1)}
     </>
   );
 }
@@ -160,6 +170,10 @@ export default function DiffWindow() {
   const tree = useMemo(
     () => treeFor(scoped, tab.type === "archive" ? tab.prefix : ""),
     [scoped, tab],
+  );
+  const overviewPages = usePagination(
+    scoped,
+    JSON.stringify([tab.id, onlyDiff, search]),
   );
   async function openItem(i) {
     const id = "file:" + i.key;
@@ -369,6 +383,7 @@ export default function DiffWindow() {
                 <p>归档在内存中展开；双击文件查看差异，双击归档打开新 Tab。</p>
               </div>
             </div>
+            <Pagination paging={overviewPages} label="归档一览分页" />
             <table className="overview-table">
               <thead>
                 <tr>
@@ -379,7 +394,7 @@ export default function DiffWindow() {
                 </tr>
               </thead>
               <tbody>
-                {scoped.map((i) => (
+                {overviewPages.rows.map((i) => (
                   <tr key={i.key} onDoubleClick={() => openItem(i)}>
                     <td>{i.path.slice(tab.prefix.length)}</td>
                     <td>{i.type}</td>

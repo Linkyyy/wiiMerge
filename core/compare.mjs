@@ -32,11 +32,8 @@ export function decode(buffer, encoding) {
 async function collectSource(filename, rules, progress) {
   const matcher = pathMatcher(rules),
     entries = new Map();
-  let visited = 0,
-    excluded = 0;
+  let excluded = 0;
   const add = (entry) => {
-    if (entries.size >= LIMITS.files)
-      throw new Error("文件条目超过 5,000 个，请通过排除规则缩小范围");
     const key = matcher.key(entry.path);
     if (!key) throw new Error(`路径匹配规则产生空路径：${entry.path}`);
     if (entries.has(key))
@@ -48,6 +45,14 @@ async function collectSource(filename, rules, progress) {
   const expand = async (buffer, prefix = "", depth = 0) => {
     if (depth > LIMITS.depth) throw new Error("嵌套归档超过 3 层上限");
     const archive = await readArchive(buffer);
+    const populated = new Set();
+    for (const { name } of archive)
+      for (
+        let i = name.indexOf("/");
+        i >= 0 && i < name.length - 1;
+        i = name.indexOf("/", i + 1)
+      )
+        populated.add(name.slice(0, i + 1));
     for (const item of archive) {
       const rel = prefix + item.name;
       if (matcher.excluded(rel)) {
@@ -55,12 +60,7 @@ async function collectSource(filename, rules, progress) {
         continue;
       }
       if (item.directory) {
-        if (
-          !archive.some(
-            (other) =>
-              other.name !== item.name && other.name.startsWith(item.name),
-          )
-        )
+        if (!populated.has(item.name))
           add({ path: rel.replace(/\/$/, ""), kind: "directory", size: 0 });
         continue;
       }
@@ -82,8 +82,6 @@ async function collectSource(filename, rules, progress) {
       add({ path: prefix.replace(/\/$/, ""), kind: "directory", size: 0 });
     children.sort((a, b) => a.name.localeCompare(b.name, "en"));
     for (const child of children) {
-      if (++visited > 20000)
-        throw new Error("扫描条目超过 20,000 个，请缩小比较范围");
       const rel = prefix + child.name,
         absolute = path.join(dir, child.name);
       if (matcher.excluded(rel)) {
@@ -206,8 +204,16 @@ async function compareEntry(key, left, right, rules) {
       if (left && right) item.status = item.details.equal ? "equal" : "changed";
       return item;
     }
-    const a = left ? await left.read() : null,
-      b = right ? await right.read() : null;
+    const a = left
+        ? lInfo?.size === 0
+          ? Buffer.alloc(0)
+          : await left.read()
+        : null,
+      b = right
+        ? rInfo?.size === 0
+          ? Buffer.alloc(0)
+          : await right.read()
+        : null;
     item.leftFingerprint = a ? hash(a) : null;
     item.rightFingerprint = b ? hash(b) : null;
     if (
@@ -289,8 +295,6 @@ export async function compare(request, onProgress) {
     const keys = [
       ...new Set([...left.entries.keys(), ...right.entries.keys()]),
     ].sort((a, b) => a.localeCompare(b, "en"));
-    if (keys.length > LIMITS.files)
-      throw new Error("两侧合计匹配条目超过 5,000 个，请缩小范围");
     items = [];
     excluded = left.excluded + right.excluded;
     for (const key of keys) {

@@ -42,7 +42,7 @@ export async function inspectFile(filename) {
     const before = await handle.stat(),
       hash = createHash("sha256");
     const decoder = new TextDecoder("utf-8", { fatal: true });
-    const chunk = Buffer.alloc(1024 * 1024);
+    const chunk = Buffer.alloc(Math.max(1, Math.min(before.size, 1024 * 1024)));
     let size = 0,
       binary = false,
       utf16 = false,

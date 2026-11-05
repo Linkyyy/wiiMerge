@@ -129,8 +129,62 @@ try {
     path: path.join(root, "artifacts/diff-tabs.png"),
   });
   await diff.screenshot({ path: path.join(root, "artifacts/diff-merge.png") });
+  const many = Object.fromEntries(
+    Array.from({ length: 401 }, (_, i) => [
+      `entry-${String(i).padStart(5, "0")}.txt`,
+      `value-${i}`,
+    ]),
+  );
+  const packed = await zip(many);
+  for (const dir of [archiveA, archiveB])
+    await fs.writeFile(path.join(dir, "app.war"), packed);
+  await page.getByRole("button", { name: "开始比较", exact: true }).click();
+  await expect(page.locator(".file-item")).toHaveCount(200);
+  await page
+    .getByRole("navigation", { name: "比较条目分页" })
+    .getByRole("button", { name: "最后一页" })
+    .click();
+  await expect(page.locator(".file-item")).toHaveCount(1);
+  await expect(page.locator(".file-item")).toContainText("entry-00400.txt");
+  await page
+    .getByRole("textbox", { name: "搜索文件", exact: true })
+    .fill("entry-00400");
+  await expect(page.locator(".file-item")).toHaveCount(1);
+  await page.getByRole("textbox", { name: "搜索文件", exact: true }).fill("");
+  const another = app.waitForEvent("window");
+  await page.getByRole("button", { name: "浏览完整目录与归档" }).click();
+  const large = await another;
+  await expect(large.locator(".overview-table tbody tr")).toHaveCount(200);
+  await large
+    .getByRole("navigation", { name: "归档一览分页" })
+    .getByRole("button", { name: "最后一页" })
+    .click();
+  await expect(large.locator(".overview-table tbody tr")).toHaveCount(1);
+  await expect(large.locator(".overview-table")).toContainText(
+    "entry-00400.txt",
+  );
+  await large.locator(".nav-tree-row").filter({ hasText: "app.war" }).click();
+  await large.locator(".tree-load-more").click();
+  await large.locator(".tree-load-more").click();
+  await expect(
+    large.locator(".nav-tree-row").filter({ hasText: "entry-00400.txt" }),
+  ).toBeVisible();
+  await large.getByPlaceholder("搜索文件路径…").fill("entry-00400");
+  await expect(large.locator(".overview-table tbody tr")).toHaveCount(1);
+  await large.getByRole("button", { name: "打开差分", exact: true }).click();
+  await expect(large.locator(".merge-table")).toContainText("value-400");
+  await large.getByRole("button", { name: "HTML 报告", exact: true }).click();
+  await expect(large.getByRole("status")).toContainText("已导出");
+  const full = await fs.readFile(html, "utf8");
+  if (
+    !full.includes("entry-00000.txt") ||
+    !full.includes("entry-00400.txt") ||
+    (full.match(/<section id="file-/g) || []).length !== 401
+  )
+    throw new Error("Pagination or search truncated the exported report");
+  await large.screenshot({ path: path.join(root, "artifacts/many-files.png") });
   console.log(
-    "PASS: integrated chrome, separate windows, hunk navigation, bidirectional merge/save, WAR/JAR tabs, overview and complete HTML report",
+    "PASS: integrated chrome, separate windows, merge/save, WAR/JAR tabs, paginated file lists, progressive tree, global search and complete HTML report",
   );
 } finally {
   await app?.close();

@@ -6,13 +6,13 @@ Windows 优先的本地桌面差异比较工具，使用 React 界面和共享 N
 
 Windows 10 / 11 x64：在 [GitHub Actions 构建页面](https://github.com/Linkyyy/wiiMerge/actions/workflows/ci.yml) 打开成功的构建记录，从 **Artifacts → wiiMerge-WebView2-Windows-x64** 下载精简版 ZIP（需要登录 GitHub）。**解压整个 ZIP 后运行 `wiiMerge.exe`**，请勿只复制启动器。无需另装 Node.js 或 Office。这是未签名的开发版便携程序。
 
-[0.2.1 精简版下载页面](https://github.com/Linkyyy/wiiMerge/actions/runs/41983769224#artifacts)
+[最新精简版构建与下载](https://github.com/Linkyyy/wiiMerge/actions/workflows/ci.yml)
 
 精简版依赖系统的 **Microsoft Edge WebView2 Runtime 和 .NET Framework 4.8**，Windows 11 通常自带；缺少 WebView2 时程序会提示微软官方安装地址。它仍然自带比较引擎，正常比较不需要联网。旧版 Electron 的规则配置继续可用。
 
-如果电脑不能安装系统组件，可下载 **wiiMerge-Windows-x64** 兼容版，解压后运行 `wiiMerge-0.2.1-Windows-x64.exe`。兼容版自带浏览器运行时，体积较大。Actions 下载有保留期限，过期后可在上述页面重新运行构建。
+如果电脑不能安装系统组件，可下载 **wiiMerge-Windows-x64** 兼容版，解压后运行 `wiiMerge-0.2.2-Windows-x64.exe`。兼容版自带浏览器运行时，体积较大。Actions 下载有保留期限，过期后可在上述页面重新运行构建。
 
-### 0.2.1 体积
+### 0.2.2 体积
 
 | 本地构建实测     | 原 0.1.0  | WebView2 精简版 | 减少  |
 | ---------------- | --------- | --------------- | ----- |
@@ -94,7 +94,7 @@ Linux 无图形显示器的云容器可使用以下测试方式。`--no-sandbox`
 WIIMERGE_SMOKE_HEADLESS=1 WIIMERGE_TEST_APP_PATH=.desktop-build npm run test:desktop
 ```
 
-WebView2 启动器可在 Linux 交叉编译。`npm run dist:lite` 使用固定版本的官方 Windows Node.js ZIP，并验证固定 SHA-256；WebView2 SDK 与 .NET 引用程序集由 NuGet 锁文件固定。产物在 `release/wiiMerge-0.2.1-WebView2-Windows-x64.zip`，解压文件也保留在 `.native-build/`。代理环境需在命令前设置 `NODE_USE_ENV_PROXY=1`。`WIIMERGE_DOTNET` 可指定 `dotnet` 的绝对路径。
+WebView2 启动器可在 Linux 交叉编译。`npm run dist:lite` 使用固定版本的官方 Windows Node.js ZIP，并验证固定 SHA-256；WebView2 SDK 与 .NET 引用程序集由 NuGet 锁文件固定。产物在 `release/wiiMerge-0.2.2-WebView2-Windows-x64.zip`，解压文件也保留在 `.native-build/`。代理环境需在命令前设置 `NODE_USE_ENV_PROXY=1`。`WIIMERGE_DOTNET` 可指定 `dotnet` 的绝对路径。
 
 Linux 上单独检查精简版界面与后台：先执行 `npm run build && node scripts/build-native.mjs --prepare-only`，再执行 `npm run test:native`；可用 `PLAYWRIGHT_CHROMIUM_EXECUTABLE` 指定 Chrome / Chromium。这项检查模拟原生对话框，Windows CI 则启动编译后的 WinForms + WebView2 程序，测试真实宿主消息、文件授权、拖放和导出。
 
@@ -113,7 +113,8 @@ NODE_USE_ENV_PROXY=1 node node_modules/electron/install.js
 - Excel 比较单元格内容的字符串表示，不比较单元格类型、样式、图表、宏、合并布局或公式计算过程。读取缓存值时不会重新计算公式，缓存缺失视为空值。
 - 不设固定的单文件、文本、合并编辑、单侧累计输入或归档展开大小上限，也不再因文本超过 2 MiB 自动切换成二进制。二进制文件使用流式 SHA-256 比较，整文件采用和备份也使用文件复制。文本和 Excel 解析、归档展开及导出仍需要相应内存，实际容量取决于系统和运行时可用资源。
 - 比较任务没有固定总时长截止，仍可手动取消。复杂文本对齐保留 2.5 秒的计算超时，以免长时间卡住；可通过忽略规则简化差异。
-- 每侧最多 5,000 个匹配条目；文件夹扫描最多 20,000 个条目、64 层，嵌套归档最多三层。符号链接、特殊文件、加密归档、不安全路径及解压尺寸与声明不符的归档仍会拒绝。
+- 文件夹扫描数量、每侧文件数量、两侧合计匹配数量及 ZIP / WAR / JAR 内部条目数量均不设固定上限。文件列表和差分一览每页显示 200 项，目录树按需展开、分批显示；搜索覆盖全部结果，导出包含所有文件。实际处理容量仍取决于可用内存和运行时能力。
+- 文件夹嵌套最多 64 层，嵌套归档最多三层。符号链接、特殊文件、加密归档、不安全路径及解压尺寸与声明不符的归档仍会拒绝。
 - Excel 不再额外限制工作表行列数或非空单元格数，仍受 Excel 格式及解析器支持范围约束；归档只在内存中读取，不向磁盘释放内部路径。
 - 每项文本 / Excel 明细最多保留 12,000 条，统计仍覆盖完整输入。长文本优先保留差异行并省略一致行；界面和 HTML / Excel 导出均标记截断。Excel 导出单元格超过 32,767 字符时会标记截断。存在错误或截断时，不应把报告当作完整明细。
 - Windows 打包运行检查由 CI 提供；交叉编译通过不等于 Windows 界面验证通过，应检查对应构建记录的测试结果。

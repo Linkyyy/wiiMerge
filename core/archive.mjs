@@ -1,7 +1,6 @@
 import yauzl from "yauzl";
 
 export const LIMITS = Object.freeze({
-  files: 5000,
   depth: 3,
 });
 export const isArchive = (name) => /\.(zip|war|jar)$/i.test(name);
@@ -23,8 +22,7 @@ export async function readArchive(buffer, { collect = true } = {}) {
   return new Promise((resolve, reject) => {
     const entries = [],
       names = new Set();
-    let count = 0,
-      settled = false;
+    let settled = false;
     const fail = (error) => {
       if (settled) return;
       settled = true;
@@ -41,8 +39,6 @@ export async function readArchive(buffer, { collect = true } = {}) {
     zip.on("entry", (entry) => {
       (async () => {
         const name = entry.fileName;
-        if (++count > LIMITS.files)
-          throw new Error(`归档条目超过 ${LIMITS.files} 个的安全上限`);
         if (
           name.includes("\0") ||
           /(^|\/)\.\.(\/|$)/.test(name) ||

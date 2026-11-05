@@ -44,6 +44,7 @@ import { diffChars } from "diff";
 import { DEFAULT_RULES } from "../core/defaults.mjs";
 
 import Titlebar from "./Titlebar.jsx";
+import Pagination, { usePagination } from "./Pagination.jsx";
 const api = window.wiiMerge;
 const LABELS = {
   changed: "有差异",
@@ -256,6 +257,10 @@ export default function App() {
   );
   const selected =
     visibleItems.find((i) => i.key === selectedKey) ?? visibleItems[0];
+  const filePages = usePagination(
+    visibleItems,
+    JSON.stringify([report?.id, filter, search]),
+  );
   const swap = () => {
     if (mode === "text") setTexts((p) => ({ left: p.right, right: p.left }));
     else setPaths((p) => ({ left: p.right, right: p.left }));
@@ -656,7 +661,7 @@ export default function App() {
                 </div>
                 <div className="file-list">
                   {visibleItems.length ? (
-                    visibleItems.map((item) => (
+                    filePages.rows.map((item) => (
                       <button
                         key={item.key}
                         onClick={() => setSelectedKey(item.key)}
@@ -690,8 +695,9 @@ export default function App() {
                     </div>
                   )}
                 </div>
+                <Pagination paging={filePages} label="比较条目分页" />
                 <div className="sidebar-footer">
-                  显示 {visibleItems.length} / {report.summary.total} 项
+                  匹配 {visibleItems.length} / {report.summary.total} 项
                   <span>排除 {report.summary.excluded} 项</span>
                 </div>
               </aside>

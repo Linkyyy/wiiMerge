@@ -2150,6 +2150,48 @@ kbd {
 }
 
 /* Integrated window chrome and dedicated comparison workspace. */
+.archive-overview .item-pagination {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+}
+.item-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 10px;
+  font-size: 11px;
+  color: #687991;
+  border-top: 1px solid #e7ecf4;
+  background: #fafcff;
+  flex-shrink: 0;
+}
+.item-pagination > div {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.item-pagination button {
+  background: #fff;
+  border: 1px solid #dfe6f1;
+  border-radius: 4px;
+  min-width: 25px;
+  height: 25px;
+  color: #526b9b;
+}
+.item-pagination button:disabled {
+  opacity: 0.35;
+}
+.tree-load-more {
+  padding: 9px 10px;
+  width: 100%;
+  text-align: left;
+  background: #f6f9ff;
+  color: #5976b0;
+  font-size: 11px;
+}
 .window-resize-handles > div {
   position: fixed;
   z-index: 10000;
