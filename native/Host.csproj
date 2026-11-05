@@ -3,6 +3,7 @@
     <TargetFramework>net48</TargetFramework>
     <OutputType>WinExe</OutputType>
     <PlatformTarget>x64</PlatformTarget>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <AssemblyName>wiiMerge</AssemblyName>
     <RootNamespace>WiiMerge</RootNamespace>
     <ApplicationIcon>../build/icon.ico</ApplicationIcon>

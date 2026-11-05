@@ -63,6 +63,7 @@ jobs:
           name: wiiMerge-WebView2-Windows-x64
           path: .native-build/
           compression-level: 9
+          include-hidden-files: true
       - name: Build Windows portable application
         if: runner.os == 'Windows'
         run: npm run dist:win
