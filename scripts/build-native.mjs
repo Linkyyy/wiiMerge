@@ -144,15 +144,31 @@ if (!process.argv.includes("--prepare-only")) {
       ],
       {
         cwd: root,
-        stdio: "inherit",
+        stdio: ["ignore", "pipe", "pipe"],
         env: { ...process.env, DOTNET_CLI_TELEMETRY_OPTOUT: "1" },
       },
     );
+    let diagnostic = "";
+    const capture = (stream, destination) =>
+      stream.on("data", (chunk) => {
+        destination.write(chunk);
+        const match = chunk
+          .toString()
+          .match(/error\s+(?:NU|CS|MSB)\d+[^\r\n]*/i);
+        if (match && !diagnostic) diagnostic = match[0];
+      });
+    capture(child.stdout, process.stdout);
+    capture(child.stderr, process.stderr);
     child.on("error", reject);
     child.on("exit", (code) =>
       code === 0
         ? resolve()
-        : reject(new Error(`Native host build failed (${code})`)),
+        : (console.error(
+            "::error::" + (diagnostic || `Native host build failed (${code})`),
+          ),
+          reject(
+            new Error(diagnostic || `Native host build failed (${code})`),
+          )),
     );
   });
   // This launcher is explicitly x64; preserve its loader, remove unused WPF and
