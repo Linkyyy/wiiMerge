@@ -1,5 +1,4 @@
 import fs from "node:fs/promises";
-import { constants } from "node:fs";
 import path from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 import iconv from "iconv-lite";
@@ -7,36 +6,11 @@ import { validateRules, pathMatcher } from "./rules.mjs";
 import { compareText } from "./text.mjs";
 import { compareExcel } from "./excel.mjs";
 import { readArchive, LIMITS, isArchive, isWorkbook } from "./archive.mjs";
+import { safeRead, inspectFile } from "./io.mjs";
+export { safeRead } from "./io.mjs";
 
 const hash = (buffer) => createHash("sha256").update(buffer).digest("hex");
-export async function safeRead(filename) {
-  const handle = await fs.open(
-    filename,
-    constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0),
-  );
-  try {
-    const stat = await handle.stat();
-    if (!stat.isFile()) throw new Error("只支持普通文件，不读取设备或符号链接");
-    if (stat.size > LIMITS.fileBytes)
-      throw new Error("文件超过 16 MiB 上限，请拆分后比较");
-    // A bounded read also handles a file growing after stat().
-    const buffer = Buffer.alloc(stat.size + 1);
-    let size = 0;
-    while (size < buffer.length) {
-      const read = await handle.read(buffer, size, buffer.length - size, null);
-      if (!read.bytesRead) break;
-      size += read.bytesRead;
-    }
-    if (size > stat.size) throw new Error("读取期间文件发生变化，请重新比较");
-    if (size < stat.size) throw new Error("读取期间文件被截短，请重新比较");
-    return buffer.subarray(0, size);
-  } finally {
-    await handle.close();
-  }
-}
-
 export function decode(buffer, encoding) {
-  if (buffer.length > LIMITS.textBytes) return null;
   if (buffer[0] === 0xff && buffer[1] === 0xfe)
     return iconv.decode(buffer.subarray(2), "utf16le");
   if (buffer[0] === 0xfe && buffer[1] === 0xff)
@@ -58,8 +32,7 @@ export function decode(buffer, encoding) {
 async function collectSource(filename, rules, progress) {
   const matcher = pathMatcher(rules),
     entries = new Map();
-  let bytes = 0,
-    visited = 0,
+  let visited = 0,
     excluded = 0;
   const add = (entry) => {
     if (entries.size >= LIMITS.files)
@@ -91,9 +64,6 @@ async function collectSource(filename, rules, progress) {
           add({ path: rel.replace(/\/$/, ""), kind: "directory", size: 0 });
         continue;
       }
-      bytes += item.size;
-      if (bytes > LIMITS.bytes)
-        throw new Error("单侧总展开数据超过 128 MiB 上限");
       if (isArchive(rel)) {
         try {
           await expand(item.buffer, `${rel}!/`, depth + 1);
@@ -135,19 +105,17 @@ async function collectSource(filename, rules, progress) {
       progress?.({ phase: "scan", message: `正在扫描 ${rel}` });
       try {
         const stat = await fs.lstat(absolute);
-        if (stat.size > LIMITS.fileBytes)
-          throw new Error("文件超过 16 MiB 上限");
-        bytes += stat.size;
-        if (bytes > LIMITS.bytes)
-          throw new Error("单侧输入总大小超过 128 MiB 上限");
         if (isArchive(rel)) await expand(await safeRead(absolute), `${rel}!/`);
         else
-          add({ path: rel, size: stat.size, read: () => safeRead(absolute) });
+          add({
+            path: rel,
+            size: stat.size,
+            file: absolute,
+            read: () => safeRead(absolute),
+          });
       } catch (error) {
         add({ path: rel, error: error.message });
       }
-      if (bytes > LIMITS.bytes)
-        throw new Error("单侧输入总大小超过 128 MiB 上限");
     }
   };
   const stat = await fs.lstat(filename);
@@ -165,6 +133,7 @@ async function collectSource(filename, rules, progress) {
           {
             path: path.basename(filename),
             size: stat.size,
+            file: filename,
             read: () => safeRead(filename),
           },
         ],
@@ -202,14 +171,50 @@ async function compareEntry(key, left, right, rules) {
       if (left && right) item.status = item.details.equal ? "equal" : "changed";
       return item;
     }
-    const a = left ? await left.read() : null,
-      b = right ? await right.read() : null;
-    item.leftFingerprint = a ? hash(a) : null;
-    item.rightFingerprint = b ? hash(b) : null;
     const lExcel = left && isWorkbook(left.path),
       rExcel = right && isWorkbook(right.path);
     if (/\.xls$/i.test(left?.path ?? "") || /\.xls$/i.test(right?.path ?? ""))
       throw new Error("旧版 .xls 暂不支持，请在 Excel 中另存为 .xlsx 后比较");
+    const lInfo =
+      !lExcel && !rExcel && rules.encoding === "auto" && left?.file
+        ? await inspectFile(left.file)
+        : null;
+    const rInfo =
+      !lExcel && !rExcel && rules.encoding === "auto" && right?.file
+        ? await inspectFile(right.file)
+        : null;
+    if (lInfo?.binary || rInfo?.binary) {
+      const fingerprint = async (entry, info) =>
+        !entry
+          ? null
+          : info?.hash ||
+            (entry.file
+              ? (await inspectFile(entry.file)).hash
+              : hash(await entry.read()));
+      item.leftFingerprint = await fingerprint(left, lInfo);
+      item.rightFingerprint = await fingerprint(right, rInfo);
+      if (lInfo) item.leftSize = lInfo.size;
+      if (rInfo) item.rightSize = rInfo.size;
+      item.details = {
+        kind: "binary",
+        equal:
+          !!left && !!right && item.leftFingerprint === item.rightFingerprint,
+        leftHash: item.leftFingerprint,
+        rightHash: item.rightFingerprint,
+        note: "流式读取并比较 SHA-256 指纹，无固定文件大小限制。",
+      };
+      if (left && right) item.status = item.details.equal ? "equal" : "changed";
+      return item;
+    }
+    const a = left ? await left.read() : null,
+      b = right ? await right.read() : null;
+    item.leftFingerprint = a ? hash(a) : null;
+    item.rightFingerprint = b ? hash(b) : null;
+    if (
+      (lInfo && lInfo.hash !== item.leftFingerprint) ||
+      (rInfo && rInfo.hash !== item.rightFingerprint)
+    )
+      throw new Error("读取期间文件发生变化，请重新比较");
     if (lExcel || rExcel) {
       if ((left && !lExcel) || (right && !rExcel))
         throw new Error("Excel 必须与 Excel 文件比较");
@@ -227,7 +232,7 @@ async function compareEntry(key, left, right, rules) {
           equal: !!a && !!b && a.equals(b),
           leftHash: a ? hash(a) : null,
           rightHash: b ? hash(b) : null,
-          note: "二进制、非 UTF-8 或超过 2 MiB 的内容按原始字节比较；可在规则中指定文本编码。",
+          note: "二进制或无法按所选编码解码的内容按原始字节比较；可在规则中指定文本编码。",
         };
       }
     }
@@ -257,11 +262,6 @@ export async function compare(request, onProgress) {
   if (mode === "text") {
     if (typeof request.left !== "string" || typeof request.right !== "string")
       throw new Error("请输入左右两侧文本");
-    if (
-      Buffer.byteLength(request.left) > LIMITS.textBytes ||
-      Buffer.byteLength(request.right) > LIMITS.textBytes
-    )
-      throw new Error("每侧文本最多 2 MiB");
     const details = compareText(request.left, request.right, rules);
     items = [
       {

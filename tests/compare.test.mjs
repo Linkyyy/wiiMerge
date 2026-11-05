@@ -152,7 +152,7 @@ test("ZIP / WAR / JAR expand nested archives without extraction and support fold
   ]);
 });
 
-test("malformed, unsafe and oversized archives fail; partial errors never become equal", async (t) => {
+test("malformed and unsafe archives fail; partial errors never become equal", async (t) => {
   await assert.rejects(readArchive(Buffer.from("not zip")));
   const valid = await zip({ "xxx/safe.txt": "hello" });
   const unsafe = Buffer.from(
@@ -160,8 +160,6 @@ test("malformed, unsafe and oversized archives fail; partial errors never become
     "latin1",
   );
   await assert.rejects(readArchive(unsafe), /invalid|不安全/i);
-  const large = await zip({ "huge.txt": Buffer.alloc(17 * 1024 * 1024, 65) });
-  await assert.rejects(readArchive(large), /16 MiB/);
   const dir = await temporary(t),
     left = path.join(dir, "a"),
     right = path.join(dir, "b");

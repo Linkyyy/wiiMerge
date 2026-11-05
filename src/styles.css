@@ -2150,6 +2150,67 @@ kbd {
 }
 
 /* Integrated window chrome and dedicated comparison workspace. */
+.window-resize-handles > div {
+  position: fixed;
+  z-index: 10000;
+  -webkit-app-region: no-drag;
+}
+.window-maximized .window-resize-handles {
+  display: none;
+}
+.resize-n,
+.resize-s {
+  left: 7px;
+  right: 7px;
+  height: 4px;
+  cursor: ns-resize;
+}
+.resize-n {
+  top: 0;
+}
+.resize-s {
+  bottom: 0;
+}
+.resize-e,
+.resize-w {
+  top: 7px;
+  bottom: 7px;
+  width: 4px;
+  cursor: ew-resize;
+}
+.resize-e {
+  right: 0;
+}
+.resize-w {
+  left: 0;
+}
+.resize-ne,
+.resize-nw,
+.resize-se,
+.resize-sw {
+  width: 7px;
+  height: 7px;
+}
+.resize-ne {
+  top: 0;
+  right: 0;
+  cursor: nesw-resize;
+}
+.resize-nw {
+  top: 0;
+  left: 0;
+  cursor: nwse-resize;
+}
+.resize-se {
+  bottom: 0;
+  right: 0;
+  cursor: nwse-resize;
+}
+.resize-sw {
+  bottom: 0;
+  left: 0;
+  cursor: nesw-resize;
+}
 .titlebar {
   height: 40px;
   flex-shrink: 0;

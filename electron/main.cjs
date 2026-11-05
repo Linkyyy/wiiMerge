@@ -18,28 +18,21 @@ const root = path.resolve(__dirname, "..");
 const development = !app.isPackaged && process.env.WIIMERGE_DEV === "1";
 const workerURL = new URL("../core/worker.mjs", pathToFileURL(__filename));
 
-function execute(data, timeout = 120000) {
+function execute(data) {
   if (activeWorker) return Promise.reject(new Error("已有任务正在运行"));
   return new Promise((resolve, reject) => {
     const worker = new Worker(workerURL, {
       workerData: data,
-      resourceLimits: { maxOldGenerationSizeMb: 768 },
     });
     activeWorker = worker;
     let settled = false;
     const finish = (error, value) => {
       if (settled) return;
       settled = true;
-      clearTimeout(timer);
       if (activeWorker === worker) activeWorker = null;
       worker.terminate();
       error ? reject(error) : resolve(value);
     };
-    const timer = setTimeout(
-      () =>
-        finish(new Error("任务超过 120 秒，已停止。请缩小范围或简化规则。")),
-      timeout,
-    );
     worker.on("message", (message) => {
       if (message.type === "progress" && window && !window.isDestroyed())
         window.webContents.send("progress", message.value);
@@ -262,6 +255,9 @@ async function setupIPC() {
 async function createWindow(query = {}) {
   const created = new BrowserWindow({
     frame: false,
+    hasShadow: true,
+    thickFrame: true,
+    accentColor: false,
     width: 1440,
     height: 940,
     minWidth: 1050,

@@ -22,6 +22,13 @@ if (!window.wiiMerge && window.chrome?.webview) {
       }
     });
   window.chrome.webview.addEventListener("message", ({ data }) => {
+    if (data.type === "window-state") {
+      document.documentElement.classList.toggle(
+        "window-maximized",
+        data.maximized,
+      );
+      return;
+    }
     const operation = pending.get(data.id);
     if (!operation) return;
     pending.delete(data.id);

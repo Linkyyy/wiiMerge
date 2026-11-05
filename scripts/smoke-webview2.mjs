@@ -87,6 +87,8 @@ try {
     throw new Error("Some native checks did not execute");
   if (!result.frameless)
     throw new Error("Root window still has a system titlebar");
+  if (!result.borderless || !result.shadowEnabled)
+    throw new Error("Root window must use a DWM shadow without border padding");
   for (const name of ["webview2-windows.png", "diff-windows.png"])
     if ((await fs.stat(path.join(artifacts, name))).size < 5000)
       throw new Error("Native screenshot is empty: " + name);

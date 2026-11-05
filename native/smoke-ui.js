@@ -46,6 +46,10 @@
     );
     if (result.error) throw new Error(result.error);
     if (!result.frameless) throw new Error("System titlebar still visible");
+    if (!result.borderless || !result.shadowEnabled)
+      throw new Error(
+        "Diff window must use a DWM shadow without border padding",
+      );
     completed.push(...result.completed);
   };
   try {
@@ -84,7 +88,17 @@
     );
     await child();
     await window.wiiMerge.windowAction("maximize");
+    await wait(
+      () => document.documentElement.classList.contains("window-maximized"),
+      "Maximized state missing",
+    );
     await window.wiiMerge.windowAction("maximize");
+    await wait(
+      () => !document.documentElement.classList.contains("window-maximized"),
+      "Restored state missing",
+    );
+    if (document.querySelectorAll(".window-resize-handles>div").length !== 8)
+      throw new Error("Borderless resize handles missing");
     completed.push("integrated window controls");
     await control("test:capture");
     await control("test:finished", { completed });

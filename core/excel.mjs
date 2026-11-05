@@ -1,7 +1,7 @@
 // Only the document workbook is used; the package root also loads streaming
 // writers/readers and their archive dependencies. Keep the locked module path.
 import Workbook from "exceljs/lib/doc/workbook.js";
-import { readArchive, LIMITS } from "./archive.mjs";
+import { readArchive } from "./archive.mjs";
 import { makeNormalizer, columnNumber, columnName } from "./rules.mjs";
 
 function displayValue(value, formulas) {
@@ -19,23 +19,16 @@ function displayValue(value, formulas) {
 }
 
 async function readWorkbook(buffer, rules) {
-  // Bound the expanded XML before letting ExcelJS parse the workbook.
+  // Validate package paths, encryption and declared sizes before parsing XML.
   await readArchive(buffer, { collect: false });
   const workbook = new Workbook();
   await workbook.xlsx.load(buffer);
   const sheets = new Map();
-  let cellCount = 0;
   for (const sheet of workbook.worksheets) {
-    if (sheet.rowCount > LIMITS.rows || sheet.columnCount > LIMITS.columns)
-      throw new Error(
-        `工作表「${sheet.name}」超过 ${LIMITS.rows} 行 / ${LIMITS.columns} 列的上限`,
-      );
     const rows = new Map();
     sheet.eachRow({ includeEmpty: false }, (row) => {
       const cells = new Map();
       row.eachCell({ includeEmpty: false }, (cell, col) => {
-        if (++cellCount > LIMITS.cells)
-          throw new Error("Excel 非空单元格超过 300,000 个");
         const value = displayValue(cell.value, rules.excelFormulas);
         if (value !== "") cells.set(col, value);
       });

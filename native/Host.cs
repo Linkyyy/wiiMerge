@@ -29,12 +29,12 @@ namespace WiiMerge {
 
   sealed class MainWindow : Form {
     readonly WebView2 view = new WebView2();
-    readonly JavaScriptSerializer serializer = new JavaScriptSerializer { MaxJsonLength = 32 * 1024 * 1024 };
+    readonly JavaScriptSerializer serializer = new JavaScriptSerializer { MaxJsonLength = int.MaxValue };
     readonly string root = AppDomain.CurrentDomain.BaseDirectory;
     readonly string fixtureFile;
     string profile;
     string token;
-    readonly HttpClient client = new HttpClient(new HttpClientHandler { UseProxy = false }) { Timeout = TimeSpan.FromSeconds(130) };
+    readonly HttpClient client = new HttpClient(new HttpClientHandler { UseProxy = false }) { Timeout = System.Threading.Timeout.InfiniteTimeSpan, MaxResponseContentBufferSize = int.MaxValue };
     Process engine;
     Uri origin;
     int openIndex, saveIndex;
@@ -43,13 +43,38 @@ namespace WiiMerge {
     readonly List<MainWindow> children = new List<MainWindow>();
     CoreWebView2Environment browserEnvironment;
     string launchUrl, detailQuery = "", reportId;
-    bool dirty, discardClosing;
+    bool dirty, discardClosing, shadowEnabled;
     [DllImport("user32.dll")] static extern bool ReleaseCapture();
     [DllImport("user32.dll")] static extern IntPtr SendMessage(IntPtr h, int m, IntPtr w, IntPtr l);
+    [StructLayout(LayoutKind.Sequential)] struct Margins { public int Left, Right, Top, Bottom; }
+    [DllImport("dwmapi.dll")] static extern int DwmIsCompositionEnabled(out bool enabled);
+    [DllImport("dwmapi.dll")] static extern int DwmExtendFrameIntoClientArea(IntPtr h, ref Margins margins);
+    [DllImport("dwmapi.dll")] static extern int DwmSetWindowAttribute(IntPtr h, int attribute, ref int value, int size);
+
+    protected override CreateParams CreateParams {
+      get { var p = base.CreateParams; p.Style |= 0x00040000 | 0x00020000 | 0x00010000 | 0x00080000; p.ExStyle &= ~0x00000200; return p; }
+    }
+    void ConfigureShadow() {
+      bool enabled;
+      if (!IsHandleCreated || DwmIsCompositionEnabled(out enabled) != 0 || !enabled) return;
+      int policy = 2, border = unchecked((int)0xfffffffe);
+      DwmSetWindowAttribute(Handle, 2, ref policy, sizeof(int));
+      // Windows 11 can suppress the accent outline independently of the shadow.
+      // Older Windows versions ignore this attribute and still use the DWM frame.
+      DwmSetWindowAttribute(Handle, 34, ref border, sizeof(int));
+      var margins = new Margins { Left = 1, Right = 1, Top = 1, Bottom = 1 };
+      shadowEnabled = DwmExtendFrameIntoClientArea(Handle, ref margins) == 0;
+    }
+    protected override void OnHandleCreated(EventArgs e) { base.OnHandleCreated(e); ConfigureShadow(); }
+    void SendWindowState() {
+      if (!view.IsDisposed && view.CoreWebView2 != null)
+        view.CoreWebView2.PostWebMessageAsJson(serializer.Serialize(new { type = "window-state", maximized = WindowState == FormWindowState.Maximized }));
+    }
+    protected override void OnSizeChanged(EventArgs e) { base.OnSizeChanged(e); if (view != null) SendWindowState(); }
 
     public MainWindow(string[] args) {
       Text = "wiiMerge";
-      FormBorderStyle = FormBorderStyle.None; Padding = new Padding(5); BackColor = Color.FromArgb(215,222,235);
+      FormBorderStyle = FormBorderStyle.None; Padding = Padding.Empty; BackColor = Color.White;
       Width = 1440; Height = 940; MinimumSize = new Size(1050, 720);
       StartPosition = FormStartPosition.CenterScreen;
       Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
@@ -83,7 +108,7 @@ namespace WiiMerge {
         if (sharedOwner == null) {
         var start = new ProcessStartInfo {
           FileName = Path.Combine(root, "runtime", "node.exe"),
-          Arguments = "--max-old-space-size=768 \"" + Path.Combine(root, "app", "server.cjs") + "\"",
+          Arguments = "\"" + Path.Combine(root, "app", "server.cjs") + "\"",
           WorkingDirectory = root, UseShellExecute = false, CreateNoWindow = true,
           RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true
         };
@@ -122,6 +147,7 @@ namespace WiiMerge {
         view.CoreWebView2.PermissionRequested += (_, e) => e.State = CoreWebView2PermissionState.Deny;
         view.CoreWebView2.WebMessageReceived += Message;
         view.CoreWebView2.NavigationCompleted += async (_, e) => {
+          if (e.IsSuccess) SendWindowState();
           if ((fixtureFile == null && sharedOwner?.fixtureFile == null) || testStarted || !e.IsSuccess) return;
           Uri current;
           if (!Uri.TryCreate(view.CoreWebView2.Source, UriKind.Absolute, out current) || current.Host != origin.Host || current.Port != origin.Port || current.AbsolutePath != "/") return;
@@ -197,6 +223,12 @@ namespace WiiMerge {
               case "maximize": MaximizedBounds = Screen.FromHandle(Handle).WorkingArea; WindowState = WindowState == FormWindowState.Maximized ? FormWindowState.Normal : FormWindowState.Maximized; break;
               case "close": BeginInvoke(new Action(Close)); break;
               case "drag": ReleaseCapture(); SendMessage(Handle, 0xA1, new IntPtr(2), IntPtr.Zero); break;
+              case "resize-n": case "resize-s": case "resize-e": case "resize-w":
+              case "resize-ne": case "resize-nw": case "resize-se": case "resize-sw":
+                if (WindowState == FormWindowState.Normal) {
+                  var hits = new Dictionary<string,int> { {"resize-w",10},{"resize-e",11},{"resize-n",12},{"resize-nw",13},{"resize-ne",14},{"resize-s",15},{"resize-sw",16},{"resize-se",17} };
+                  ReleaseCapture(); SendMessage(Handle, 0xA1, new IntPtr(hits[(string)args["action"]]), IntPtr.Zero);
+                } break;
               default: throw new Exception("无效的窗口操作。");
             } result = true; break;
           case "setDirty": dirty = Convert.ToBoolean(args["value"]); result = true; break;
@@ -278,6 +310,8 @@ namespace WiiMerge {
           case "test:finished":
             if (fixtureFile == null && sharedOwner?.fixtureFile == null) throw new Exception("测试接口未启用。");
             args["frameless"] = FormBorderStyle == FormBorderStyle.None;
+            args["borderless"] = Padding == Padding.Empty;
+            args["shadowEnabled"] = shadowEnabled;
             File.WriteAllText(Fixture(sharedOwner == null ? "result" : "diffResult"), serializer.Serialize(args)); result = true; break;
           default: throw new Exception("不允许的本机操作。");
         }
@@ -288,7 +322,10 @@ namespace WiiMerge {
     }
 
     protected override void WndProc(ref System.Windows.Forms.Message m) {
+      // Keep the resize/snap styles for DWM shadows without a non-client border.
+      if (m.Msg == 0x83 && m.WParam != IntPtr.Zero) { m.Result = IntPtr.Zero; return; }
       base.WndProc(ref m);
+      if (m.Msg == 0x31e) ConfigureShadow();
       if (m.Msg == 0x84 && WindowState == FormWindowState.Normal) {
         var p = PointToClient(Cursor.Position); bool l = p.X < 6, r = p.X >= ClientSize.Width - 6, t = p.Y < 6, b = p.Y >= ClientSize.Height - 6;
         if (l || r || t || b) m.Result = new IntPtr(t ? (l ? 13 : r ? 14 : 12) : b ? (l ? 16 : r ? 17 : 15) : l ? 10 : 11);

@@ -2,8 +2,9 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { randomUUID, createHash } from "node:crypto";
 import iconv from "iconv-lite";
-import { safeRead, decode } from "./compare.mjs";
-import { isArchive, readArchive, LIMITS } from "./archive.mjs";
+import { decode } from "./compare.mjs";
+import { safeRead, inspectFile } from "./io.mjs";
+import { isArchive, readArchive } from "./archive.mjs";
 import { compareText } from "./text.mjs";
 import { DEFAULT_RULES } from "./defaults.mjs";
 
@@ -30,10 +31,10 @@ async function sideSource(root, relative, missing, encoding, binary = false) {
     if (!missing) {
       if (!inside(boundary, await fs.realpath(file)))
         throw new Error("文件路径超出比较范围");
-      buffer = await safeRead(file);
+      if (!binary || isArchive(file)) buffer = await safeRead(file);
     }
   } else {
-    if (!missing) buffer = await safeRead(file);
+    if (!missing && (!binary || isArchive(file))) buffer = await safeRead(file);
     boundary = path.dirname(await fs.realpath(root));
     if (!isArchive(root)) pieces.length = 0;
   }
@@ -52,10 +53,13 @@ async function sideSource(root, relative, missing, encoding, binary = false) {
       boundary,
       virtual,
       buffer,
-      fingerprint: buffer ? hash(buffer) : null,
+      exists: !missing,
+      fingerprint: missing
+        ? null
+        : buffer
+          ? hash(buffer)
+          : (await inspectFile(file)).hash,
     };
-  if (buffer && buffer.length > LIMITS.textBytes)
-    throw new Error("合并文本不能超过 2 MiB");
   const text = buffer ? decode(buffer, encoding) : "";
   if (text === null) throw new Error("该条目不是可合并文本");
   let codec = encoding === "auto" ? "utf8" : encoding,
@@ -198,11 +202,7 @@ export class Workspace {
   preview(id, left, right) {
     const d = this.document(id);
     for (const text of [left, right])
-      if (
-        typeof text !== "string" ||
-        Buffer.byteLength(text) > LIMITS.textBytes
-      )
-        throw new Error("每侧合并文本最多 2 MiB");
+      if (typeof text !== "string") throw new Error("请输入有效的合并文本");
     d.left = left;
     d.right = right;
     return true;
@@ -354,26 +354,34 @@ export class Workspace {
     }
     await fs.mkdir(path.dirname(b.file), { recursive: true });
     let backup = null;
-    if (b.buffer) {
+    if (b.exists) {
       const folder = path.join(this.dataDir, "backups");
       await fs.mkdir(folder, { recursive: true });
       backup = path.join(folder, randomUUID() + ".bak");
-      await fs.writeFile(backup, b.buffer, { mode: 0o600 });
+      await fs.copyFile(b.file, backup);
+      await fs.chmod(backup, 0o600);
+      if ((await inspectFile(backup)).hash !== b.fingerprint)
+        throw new Error("备份期间文件发生变化，已取消覆盖");
       await fs.writeFile(backup + ".json", JSON.stringify({ target: b.file }));
     }
     const temp = b.file + ".wiimerge-" + randomUUID() + ".tmp";
     try {
-      await fs.writeFile(temp, a.buffer, {
-        flag: "wx",
-        mode: b.buffer ? (await fs.stat(b.file)).mode & 0o777 : 0o600,
-      });
+      if (a.virtual)
+        await fs.writeFile(temp, a.buffer, { flag: "wx", mode: 0o600 });
+      else await fs.copyFile(a.file, temp, fs.constants.COPYFILE_EXCL);
+      await fs.chmod(
+        temp,
+        b.exists ? (await fs.stat(b.file)).mode & 0o777 : 0o600,
+      );
+      if ((await inspectFile(temp)).hash !== a.fingerprint)
+        throw new Error("复制期间来源文件发生变化，已取消覆盖");
       let latest = null;
       try {
-        latest = await safeRead(b.file);
+        latest = (await inspectFile(b.file)).hash;
       } catch (e) {
         if (e.code !== "ENOENT") throw e;
       }
-      if ((latest ? hash(latest) : null) !== b.fingerprint)
+      if (latest !== b.fingerprint)
         throw new Error("保存前文件发生变化，已取消覆盖");
       await fs.rename(temp, b.file);
     } finally {

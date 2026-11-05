@@ -172,9 +172,9 @@ test("multiple native windows keep separate authentication cookies", async (t) =
   }
 });
 
-test("native JSON transport preserves the 2 MiB per-side text allowance", async (t) => {
+test("native JSON transport accepts text beyond the old text and 25 MiB transport caps", async (t) => {
   const s = await setup(t),
-    text = "\t".repeat(2 * 1024 * 1024);
+    text = "\t".repeat(7 * 1024 * 1024);
   const report = await s.post("/api/compare", {
     mode: "text",
     left: text,

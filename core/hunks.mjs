@@ -48,19 +48,15 @@ export function textModel(left, right) {
 }
 export function adoptHunk(left, right, hunk, from) {
   if (!["left", "right"].includes(from)) throw new Error("无效的合并方向");
-  const a = lines(left),
+  let a = lines(left),
     b = lines(right);
   if (from === "left")
-    b.splice(
-      hunk.rightStart,
-      hunk.rightEnd - hunk.rightStart,
-      ...a.slice(hunk.leftStart, hunk.leftEnd),
-    );
+    b = b
+      .slice(0, hunk.rightStart)
+      .concat(a.slice(hunk.leftStart, hunk.leftEnd), b.slice(hunk.rightEnd));
   else
-    a.splice(
-      hunk.leftStart,
-      hunk.leftEnd - hunk.leftStart,
-      ...b.slice(hunk.rightStart, hunk.rightEnd),
-    );
+    a = a
+      .slice(0, hunk.leftStart)
+      .concat(b.slice(hunk.rightStart, hunk.rightEnd), a.slice(hunk.leftEnd));
   return { left: a.join("\n"), right: b.join("\n") };
 }

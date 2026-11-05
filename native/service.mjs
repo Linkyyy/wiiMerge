@@ -43,23 +43,16 @@ export async function createService({
     return new Promise((resolve, reject) => {
       const worker = new Worker(workerURL, {
         workerData: data,
-        resourceLimits: { maxOldGenerationSizeMb: 768 },
       });
       activeWorker = worker;
       let settled = false;
       const finish = (error, result) => {
         if (settled) return;
         settled = true;
-        clearTimeout(timer);
         if (activeWorker === worker) activeWorker = null;
         worker.terminate();
         error ? reject(error) : resolve(result);
       };
-      const timer = setTimeout(
-        () =>
-          finish(new Error("任务超过 120 秒，已停止。请缩小范围或简化规则。")),
-        120000,
-      );
       worker.on("message", (message) => {
         if (message.type === "result") finish(null, message.value);
         else if (message.type === "error") finish(new Error(message.message));
@@ -74,12 +67,7 @@ export async function createService({
 
   async function body(request) {
     const chunks = [];
-    let size = 0;
     for await (const chunk of request) {
-      size += chunk.length;
-      // JSON escaping can expand each logical text character up to six bytes;
-      // preserve the existing 2 MiB-per-side limit after transport encoding.
-      if (size > 25 * 1024 * 1024) throw new Error("请求超过 25 MiB 上限");
       chunks.push(chunk);
     }
     return chunks.length
@@ -321,6 +309,7 @@ export async function createService({
       else response.end();
     }
   });
+  server.requestTimeout = 0;
   await new Promise((resolve, reject) => {
     server.once("error", reject);
     server.listen(0, "127.0.0.1", resolve);

@@ -2,13 +2,7 @@ import yauzl from "yauzl";
 
 export const LIMITS = Object.freeze({
   files: 5000,
-  bytes: 128 * 1024 * 1024,
-  fileBytes: 16 * 1024 * 1024,
   depth: 3,
-  textBytes: 2 * 1024 * 1024,
-  cells: 300000,
-  rows: 10000,
-  columns: 256,
 });
 export const isArchive = (name) => /\.(zip|war|jar)$/i.test(name);
 export const isWorkbook = (name) => /\.(xlsx|xlsm)$/i.test(name);
@@ -30,7 +24,6 @@ export async function readArchive(buffer, { collect = true } = {}) {
     const entries = [],
       names = new Set();
     let count = 0,
-      bytes = 0,
       settled = false;
     const fail = (error) => {
       if (settled) return;
@@ -69,11 +62,6 @@ export async function readArchive(buffer, { collect = true } = {}) {
           zip.readEntry();
           return;
         }
-        if (entry.uncompressedSize > LIMITS.fileBytes)
-          throw new Error(`归档内文件超过 16 MiB：${name}`);
-        bytes += entry.uncompressedSize;
-        if (bytes > LIMITS.bytes)
-          throw new Error("归档展开后超过 128 MiB 安全上限");
         const stream = await new Promise((res, rej) =>
           zip.openReadStream(entry, (err, value) =>
             err ? rej(err) : res(value),
@@ -83,7 +71,7 @@ export async function readArchive(buffer, { collect = true } = {}) {
         let actual = 0;
         for await (const chunk of stream) {
           actual += chunk.length;
-          if (actual > LIMITS.fileBytes || actual > entry.uncompressedSize) {
+          if (actual > entry.uncompressedSize) {
             stream.destroy();
             throw new Error("归档解压尺寸超出声明");
           }
