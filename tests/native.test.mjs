@@ -171,3 +171,15 @@ test("multiple native windows keep separate authentication cookies", async (t) =
     assert.equal(response.status, 200);
   }
 });
+
+test("native JSON transport preserves the 2 MiB per-side text allowance", async (t) => {
+  const s = await setup(t),
+    text = "\t".repeat(2 * 1024 * 1024);
+  const report = await s.post("/api/compare", {
+    mode: "text",
+    left: text,
+    right: text,
+  });
+  assert.equal(report.summary.equal, 1);
+  assert.equal(report.items[0].details.rows[0].left.length, text.length);
+});

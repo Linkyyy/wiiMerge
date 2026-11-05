@@ -76,7 +76,9 @@ export async function createService({
     let size = 0;
     for await (const chunk of request) {
       size += chunk.length;
-      if (size > 6 * 1024 * 1024) throw new Error("请求超过 6 MiB 上限");
+      // JSON escaping can expand each logical text character up to six bytes;
+      // preserve the existing 2 MiB-per-side limit after transport encoding.
+      if (size > 25 * 1024 * 1024) throw new Error("请求超过 25 MiB 上限");
       chunks.push(chunk);
     }
     return chunks.length

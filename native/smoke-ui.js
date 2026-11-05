@@ -108,6 +108,10 @@
       ["Excel 报告", "report.xlsx"],
     ]) {
       click("导出报告");
+      await wait(
+        () => document.querySelector(".export-menu"),
+        "Export menu did not open",
+      );
       click(label, ".export-menu button", true);
       await wait(
         () => document.querySelector(".toast")?.textContent.includes(suffix),
