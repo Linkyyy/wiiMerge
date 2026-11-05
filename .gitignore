@@ -1,4 +1,9 @@
 node_modules/
+.desktop-build/
+.native-build/
+.cache/
+native/obj/
+native/bin/
 dist/
 release/
 artifacts/

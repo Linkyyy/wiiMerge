@@ -1,4 +1,6 @@
-import ExcelJS from "exceljs";
+// Only the document workbook is used; the package root also loads streaming
+// writers/readers and their archive dependencies. Keep the locked module path.
+import Workbook from "exceljs/lib/doc/workbook.js";
 import { readArchive, LIMITS } from "./archive.mjs";
 import { makeNormalizer, columnNumber, columnName } from "./rules.mjs";
 
@@ -19,7 +21,7 @@ function displayValue(value, formulas) {
 async function readWorkbook(buffer, rules) {
   // Bound the expanded XML before letting ExcelJS parse the workbook.
   await readArchive(buffer, { collect: false });
-  const workbook = new ExcelJS.Workbook();
+  const workbook = new Workbook();
   await workbook.xlsx.load(buffer);
   const sheets = new Map();
   let cellCount = 0;

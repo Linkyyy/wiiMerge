@@ -80,6 +80,9 @@ try {
         ? []
         : [process.env.WIIMERGE_TEST_APP_PATH || root]),
       ...launchArgs,
+      ...(process.env.WIIMERGE_TEST_LOCALE
+        ? [`--lang=${process.env.WIIMERGE_TEST_LOCALE}`]
+        : []),
       `--user-data-dir=${path.join(tmp, "profile")}`,
     ],
     env: { ...process.env, WIIMERGE_DEV: "0" },

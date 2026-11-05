@@ -1,4 +1,4 @@
-import ExcelJS from "exceljs";
+import Workbook from "exceljs/lib/doc/workbook.js";
 
 export const STATUS_LABEL = {
   added: "仅右侧",
@@ -103,7 +103,7 @@ body{font:14px/1.6 system-ui,sans-serif;color:#253449;background:#f5f7fb;margin:
 }
 
 export async function excelReport(report) {
-  const wb = new ExcelJS.Workbook();
+  const wb = new Workbook();
   wb.creator = "wiiMerge";
   wb.created = new Date(report.createdAt);
   const summary = wb.addWorksheet("比较摘要");

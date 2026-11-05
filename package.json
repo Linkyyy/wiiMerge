@@ -1,6 +1,6 @@
 {
   "name": "wiimerge",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "本地文件、文本、Excel 与归档差异比较工具",
   "private": true,
   "type": "module",
@@ -10,7 +10,7 @@
   "scripts": {
     "dev": "node scripts/dev.mjs",
     "dev:ui": "vite --host 127.0.0.1",
-    "build": "vite build",
+    "build": "npm run build:ui && node scripts/build-desktop.mjs",
     "start": "electron .",
     "test": "node --test --test-isolation=none tests/*.test.mjs",
     "test:desktop": "node scripts/smoke.mjs",
@@ -18,21 +18,24 @@
     "dist:win": "npm run build && electron-builder --win portable --x64",
     "dist:mac": "npm run build && electron-builder --mac dmg",
     "dist:linux": "npm run build && electron-builder --linux AppImage",
-    "format": "prettier --write src core electron scripts tests *.js *.json *.html *.md .github/workflows/*.yml",
-    "format:check": "prettier --check src core electron scripts tests *.js *.json *.html *.md .github/workflows/*.yml"
+    "format": "prettier --write src core electron scripts tests native/*.mjs native/*.json build/*.json build/**/*.md *.js *.json *.html *.md .github/workflows/*.yml",
+    "format:check": "prettier --check src core electron scripts tests native/*.mjs native/*.json build/*.json build/**/*.md *.js *.json *.html *.md .github/workflows/*.yml",
+    "build:ui": "vite build",
+    "check:package": "node scripts/check-package.mjs",
+    "build:native": "npm run build && node scripts/build-native.mjs",
+    "dist:lite": "npm run build:native && node scripts/package-native.mjs",
+    "test:native": "node scripts/smoke-native.mjs"
   },
   "build": {
     "appId": "io.wiimerge.desktop",
     "productName": "wiiMerge",
     "directories": {
-      "output": "release"
+      "output": "release",
+      "app": ".desktop-build"
     },
     "files": [
-      "dist/**/*",
-      "electron/**/*",
-      "core/**/*",
-      "package.json",
-      "build/icon.png"
+      "**/*",
+      "!**/node_modules/**"
     ],
     "asar": true,
     "win": {
@@ -51,7 +54,14 @@
     "icon": "build/icon.png",
     "portable": {
       "artifactName": "wiiMerge-${version}-Windows-x64.exe"
-    }
+    },
+    "compression": "maximum",
+    "electronLanguages": [
+      "en-US",
+      "zh-CN",
+      "zh-TW"
+    ],
+    "npmRebuild": false
   },
   "dependencies": {
     "diff": "^9.0.0",
@@ -65,10 +75,12 @@
     "yauzl": "^3.4.0"
   },
   "devDependencies": {
+    "@electron/asar": "^4.3.1",
     "@playwright/test": "^1.64.1",
     "@vitejs/plugin-react": "^6.2.1",
     "electron": "^45.2.3",
     "electron-builder": "^26.18.0",
+    "esbuild": "^0.28.2",
     "prettier": "^3.9.10",
     "vite": "^8.3.5",
     "yazl": "^3.3.1"

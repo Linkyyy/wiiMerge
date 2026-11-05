@@ -23,19 +23,66 @@ jobs:
         run: npm run test:desktop
         env:
           WIIMERGE_SMOKE_HEADLESS: "1"
+          WIIMERGE_TEST_APP_PATH: .desktop-build
+      - name: Prepare Linux native-bridge check
+        if: runner.os == 'Linux'
+        run: node scripts/build-native.mjs --prepare-only
+      - name: Validate native bridge and comparison service
+        if: runner.os == 'Linux'
+        run: npm run test:native
+        env:
+          PLAYWRIGHT_CHROMIUM_EXECUTABLE: /usr/bin/google-chrome
+      - uses: actions/setup-dotnet@v4
+        if: runner.os == 'Windows'
+        with:
+          dotnet-version: 10.0.x
+      - name: Build WebView2 application
+        if: runner.os == 'Windows'
+        run: npm run build:native
+      - name: Ensure WebView2 test runtime
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $machine = "${env:ProgramFiles(x86)}\Microsoft\EdgeWebView\Application\*\msedgewebview2.exe"
+          $user = "$env:LOCALAPPDATA\Microsoft\EdgeWebView\Application\*\msedgewebview2.exe"
+          if (!(Test-Path $machine) -and !(Test-Path $user)) {
+            $installer = "$env:RUNNER_TEMP\MicrosoftEdgeWebview2Setup.exe"
+            Invoke-WebRequest 'https://go.microsoft.com/fwlink/p/?LinkId=2124703' -OutFile $installer
+            $result = Start-Process $installer -ArgumentList '/silent', '/install' -Wait -PassThru
+            if ($result.ExitCode -ne 0) { throw "WebView2 setup failed: $($result.ExitCode)" }
+          }
+      - name: Validate actual WebView2 desktop
+        if: runner.os == 'Windows'
+        run: npm run test:native
+      - name: Package lightweight application
+        if: runner.os == 'Windows'
+        run: node scripts/package-native.mjs
+      - uses: actions/upload-artifact@v4
+        if: runner.os == 'Windows'
+        with:
+          name: wiiMerge-WebView2-Windows-x64
+          path: .native-build/
+          compression-level: 9
       - name: Build Windows portable application
         if: runner.os == 'Windows'
         run: npm run dist:win
+      - name: Verify size and packaged contents
+        if: runner.os == 'Windows'
+        run: npm run check:package
       - name: Windows packaged desktop smoke
         if: runner.os == 'Windows'
         run: npm run test:desktop
         env:
           WIIMERGE_TEST_EXECUTABLE: release/win-unpacked/wiiMerge.exe
+          WIIMERGE_TEST_LOCALE: zh-CN
       - uses: actions/upload-artifact@v4
         if: runner.os == 'Windows'
         with:
           name: wiiMerge-Windows-x64
-          path: release/*Windows-x64.exe
+          path: |
+            release/*Windows-x64.exe
+            release/SHA256SUMS.txt
+            release/size-report.json
       - uses: actions/upload-artifact@v4
         if: always()
         with:
