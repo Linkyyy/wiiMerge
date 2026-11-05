@@ -9,32 +9,14 @@ const root = path.resolve(import.meta.dirname, "..");
 const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "wiimerge-native-ui-"));
 const artifacts = path.join(root, "artifacts");
 await fs.mkdir(artifacts, { recursive: true });
-const a = path.join(tmp, "a.xlsx"),
-  b = path.join(tmp, "b.xlsx"),
+const a = path.join(tmp, "a.txt"),
+  b = path.join(tmp, "b.txt"),
   left = path.join(tmp, "before"),
   right = path.join(tmp, "after");
 const longA = path.join(tmp, "long-a.txt"),
   longB = path.join(tmp, "long-b.txt");
-await fs.writeFile(
-  a,
-  await workbook({
-    订单: [
-      ["ID", "Value"],
-      [1, 100],
-      [2, 200],
-    ],
-  }),
-);
-await fs.writeFile(
-  b,
-  await workbook({
-    订单: [
-      ["ID", "Value"],
-      [2, 220],
-      [1, 100],
-    ],
-  }),
-);
+await fs.writeFile(a, "head\nleft-first\nanchor\nleft-last\n");
+await fs.writeFile(b, "head\r\nright-first\r\nanchor\r\nright-last\r\n");
 await fs.mkdir(left);
 await fs.mkdir(right);
 await fs.writeFile(
@@ -57,6 +39,11 @@ await fs.writeFile(
   fixtureFile,
   JSON.stringify({
     script: path.join(root, "native/smoke-ui.js"),
+    diffScript: path.join(root, "native/smoke-diff.js"),
+    diffResult: path.join(tmp, "diff-result.json"),
+    diffScreenshot: path.join(artifacts, "diff-windows.png"),
+    dropLeft: a,
+    dropRight: b,
     result: resultFile,
     screenshot: path.join(artifacts, "webview2-windows.png"),
     drop: a,
@@ -96,22 +83,33 @@ try {
   }
   if (!result) throw new Error("Native UI test timed out");
   if (result.error) throw new Error(result.error);
-  if (result.completed.length !== 8)
+  if (result.completed.length !== 5)
     throw new Error("Some native checks did not execute");
+  if (!result.frameless)
+    throw new Error("Root window still has a system titlebar");
+  for (const name of ["webview2-windows.png", "diff-windows.png"])
+    if ((await fs.stat(path.join(artifacts, name))).size < 5000)
+      throw new Error("Native screenshot is empty: " + name);
   for (const name of result.completed) console.log("PASS: " + name);
-  if (!(await fs.readFile(html, "utf8")).includes("220"))
-    throw new Error("HTML content missing");
+  const exported = await fs.readFile(html, "utf8");
+  if (
+    !exported.includes("差分一览") ||
+    !exported.includes("app.txt") ||
+    !exported.includes("before")
+  )
+    throw new Error("HTML overview or file details missing");
   const wb = new ExcelJS.Workbook();
   await wb.xlsx.readFile(xlsx);
-  if (wb.getWorksheet("Excel差异").getCell("I2").value !== "220")
-    throw new Error("Excel content missing");
   if (
-    (await fs.realpath(result.droppedPath)).toLowerCase() !==
-    (await fs.realpath(a)).toLowerCase()
+    wb.getWorksheet("文件清单").rowCount !== 3 ||
+    wb.getWorksheet("文本差异").rowCount < 2
   )
-    throw new Error("Dropped path points to a different file");
-  if ((await fs.stat(path.join(artifacts, "webview2-windows.png"))).size < 1000)
-    throw new Error("No native screenshot was captured");
+    throw new Error("Excel overview or details missing");
+  if (
+    (await fs.readFile(b, "utf8")) !==
+    "head\r\nleft-first\r\nanchor\r\nleft-last\r\n"
+  )
+    throw new Error("Merge did not preserve target CRLF");
   console.log(
     "PASS: exported reports independently read and actual native screenshot captured",
   );

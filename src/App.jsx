@@ -43,6 +43,7 @@ import {
 import { diffChars } from "diff";
 import { DEFAULT_RULES } from "../core/defaults.mjs";
 
+import Titlebar from "./Titlebar.jsx";
 const api = window.wiiMerge;
 const LABELS = {
   changed: "有差异",
@@ -131,7 +132,15 @@ export default function App() {
         .loadRules()
         .then(setRules)
         .catch((e) => setError(e.message));
-      return api.onProgress(setProgress);
+      return api.onProgress((value) => {
+        if (value.reportUpdated)
+          setReport((previous) =>
+            previous?.id === value.reportUpdated.id
+              ? value.reportUpdated
+              : previous,
+          );
+        else setProgress(value);
+      });
     }
   }, []);
   useEffect(() => {
@@ -163,19 +172,27 @@ export default function App() {
   const drop = async (event, side) => {
     event.preventDefault();
     if (!api || busy) return;
-    const file = event.dataTransfer.files[0];
-    if (!file) return;
+    const files = [...event.dataTransfer.files];
+    if (!files.length) return;
     try {
-      const result = await api.droppedPath(file);
-      if ((mode === "folders") !== (result.kind === "folder")) {
-        setError("请拖入与当前模式相符的文件或文件夹");
-        return;
+      if (files.length > 2) throw new Error("一次最多拖入两个文件或文件夹");
+      const selected = api.droppedPaths
+        ? await api.droppedPaths(files)
+        : [await api.droppedPath(files[0])];
+      if (selected.length === 2) {
+        if (selected[0].kind !== selected[1].kind)
+          throw new Error("左右两侧请选择同类路径");
+        setMode(selected[0].kind === "folder" ? "folders" : "files");
+        setPaths({ left: selected[0].path, right: selected[1].path });
+      } else {
+        setMode(selected[0].kind === "folder" ? "folders" : "files");
+        setPaths((p) => ({ ...p, [side]: selected[0].path }));
       }
-      setPaths((p) => ({ ...p, [side]: result.path }));
     } catch (e) {
       notifyError(e);
     }
   };
+
   const run = useCallback(async () => {
     if (busy || exporting || !canCompare) return;
     if (!api) {
@@ -271,35 +288,24 @@ export default function App() {
     rules.pathReplacements.length;
 
   return (
-    <div className={`app-shell ${report ? "has-results" : ""}`}>
-      <header className="app-header">
-        <div className="brand">
-          <div className="brand-mark">
-            <ArrowLeftRight size={25} strokeWidth={2.5} />
-          </div>
-          <div>
-            <span className="brand-name">
-              wii<span>Merge</span>
-            </span>
-            <span className="brand-caption">差异，一目了然</span>
-          </div>
-          <span className="version">DESKTOP / 0.1</span>
-        </div>
-        <div className="header-right">
-          <span className="local-badge">
-            <ShieldCheck size={14} /> 本地比较 · 数据不上传
-          </span>
-          <button
-            className="button subtle"
-            disabled={busy || exporting}
-            onClick={() => setRulesOpen(true)}
-          >
-            <Settings2 size={16} />
-            比较规则
-            {activeRules > 0 && <span className="counter">{activeRules}</span>}
-          </button>
-        </div>
-      </header>
+    <div
+      className={`app-shell ${report ? "has-results" : ""}`}
+      onDragOver={(e) => e.preventDefault()}
+      onDrop={(e) => {
+        if (!e.defaultPrevented) drop(e, "left");
+      }}
+    >
+      <Titlebar>
+        <button
+          className="button subtle"
+          disabled={busy || exporting}
+          onClick={() => setRulesOpen(true)}
+        >
+          <Settings2 size={15} />
+          比较规则
+          {activeRules > 0 && <span className="counter">{activeRules}</span>}
+        </button>
+      </Titlebar>
       <main className="main-layout">
         <section className="workspace-top">
           <div className="workspace-heading">
@@ -654,6 +660,12 @@ export default function App() {
                       <button
                         key={item.key}
                         onClick={() => setSelectedKey(item.key)}
+                        onDoubleClick={() =>
+                          api.openDiff?.({
+                            reportId: report.id,
+                            itemKey: item.key,
+                          })
+                        }
                         className={`file-item ${selected?.key === item.key ? "selected" : ""}`}
                       >
                         <span className={`file-type-icon ${item.type}`}>
@@ -685,7 +697,31 @@ export default function App() {
               </aside>
               <div className="detail-panel">
                 {selected ? (
-                  <Detail key={selected.key + report.id} item={selected} />
+                  <div className="result-preview">
+                    <FileIcon type={selected.type} size={34} />
+                    <h3>{selected.path}</h3>
+                    <span className={`status-pill ${selected.status}`}>
+                      {LABELS[selected.status]}
+                    </span>
+                    <p>在独立差分窗口中查看文件、导航、归档 Tab 与合并操作。</p>
+                    <button
+                      className="button primary"
+                      onClick={() =>
+                        api.openDiff?.({
+                          reportId: report.id,
+                          itemKey: selected.key,
+                        })
+                      }
+                    >
+                      打开独立差分窗口
+                    </button>
+                    <button
+                      className="text-button"
+                      onClick={() => api.openDiff?.({ reportId: report.id })}
+                    >
+                      浏览完整目录与归档
+                    </button>
+                  </div>
                 ) : (
                   <div className="detail-empty">
                     <Search size={30} />
@@ -809,7 +845,7 @@ function EmptyState({ mode, onSample }) {
   );
 }
 
-function CharacterDiff({ left, right, side }) {
+export function CharacterDiff({ left, right, side }) {
   const changes = useMemo(
     () =>
       left?.length + right?.length < 4000
@@ -827,7 +863,7 @@ function CharacterDiff({ left, right, side }) {
     ));
 }
 
-function Detail({ item }) {
+export function Detail({ item }) {
   const d = item.details;
   const [diffOnly, setDiffOnly] = useState(false),
     [wrap, setWrap] = useState(true),
@@ -851,6 +887,21 @@ function Detail({ item }) {
         .filter((i) => i !== -1),
     [rows],
   );
+  useEffect(() => {
+    const navigate = (event) => {
+      const index = Number(event.detail);
+      setLimit((n) => Math.max(n, index + 100));
+      setTimeout(
+        () =>
+          scroll.current
+            ?.querySelector(`[data-row="${index}"]`)
+            ?.scrollIntoView({ block: "center", behavior: "smooth" }),
+        30,
+      );
+    };
+    window.addEventListener("wiimerge-jump", navigate);
+    return () => window.removeEventListener("wiimerge-jump", navigate);
+  }, []);
   const jump = (step) => {
     if (!changes.length) return;
     const index =

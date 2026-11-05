@@ -9,7 +9,7 @@ import { compareExcel } from "./excel.mjs";
 import { readArchive, LIMITS, isArchive, isWorkbook } from "./archive.mjs";
 
 const hash = (buffer) => createHash("sha256").update(buffer).digest("hex");
-async function safeRead(filename) {
+export async function safeRead(filename) {
   const handle = await fs.open(
     filename,
     constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0),
@@ -35,7 +35,7 @@ async function safeRead(filename) {
   }
 }
 
-function decode(buffer, encoding) {
+export function decode(buffer, encoding) {
   if (buffer.length > LIMITS.textBytes) return null;
   if (buffer[0] === 0xff && buffer[1] === 0xfe)
     return iconv.decode(buffer.subarray(2), "utf16le");
@@ -204,6 +204,8 @@ async function compareEntry(key, left, right, rules) {
     }
     const a = left ? await left.read() : null,
       b = right ? await right.read() : null;
+    item.leftFingerprint = a ? hash(a) : null;
+    item.rightFingerprint = b ? hash(b) : null;
     const lExcel = left && isWorkbook(left.path),
       rExcel = right && isWorkbook(right.path);
     if (/\.xls$/i.test(left?.path ?? "") || /\.xls$/i.test(right?.path ?? ""))

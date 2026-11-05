@@ -8,6 +8,8 @@ using System.Security.Cryptography;
 using System.Threading.Tasks;
 using System.Web.Script.Serialization;
 using System.Windows.Forms;
+using System.Runtime.InteropServices;
+using System.Linq;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.WinForms;
 
@@ -27,19 +29,27 @@ namespace WiiMerge {
 
   sealed class MainWindow : Form {
     readonly WebView2 view = new WebView2();
-    readonly JavaScriptSerializer serializer = new JavaScriptSerializer();
+    readonly JavaScriptSerializer serializer = new JavaScriptSerializer { MaxJsonLength = 32 * 1024 * 1024 };
     readonly string root = AppDomain.CurrentDomain.BaseDirectory;
     readonly string fixtureFile;
-    readonly string profile;
-    readonly string token;
+    string profile;
+    string token;
     readonly HttpClient client = new HttpClient(new HttpClientHandler { UseProxy = false }) { Timeout = TimeSpan.FromSeconds(130) };
     Process engine;
     Uri origin;
     int openIndex, saveIndex;
     bool testStarted;
+    MainWindow sharedOwner;
+    readonly List<MainWindow> children = new List<MainWindow>();
+    CoreWebView2Environment browserEnvironment;
+    string launchUrl, detailQuery = "", reportId;
+    bool dirty, discardClosing;
+    [DllImport("user32.dll")] static extern bool ReleaseCapture();
+    [DllImport("user32.dll")] static extern IntPtr SendMessage(IntPtr h, int m, IntPtr w, IntPtr l);
 
     public MainWindow(string[] args) {
       Text = "wiiMerge";
+      FormBorderStyle = FormBorderStyle.None; Padding = new Padding(5); BackColor = Color.FromArgb(215,222,235);
       Width = 1440; Height = 940; MinimumSize = new Size(1050, 720);
       StartPosition = FormStartPosition.CenterScreen;
       Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
@@ -53,6 +63,10 @@ namespace WiiMerge {
       token = BitConverter.ToString(key).Replace("-", "").ToLowerInvariant();
       Controls.Add(view); view.Dock = DockStyle.Fill;
       Shown += async (_, __) => await Start();
+      FormClosing += (_, e) => {
+        if (!discardClosing && (dirty || children.Any(c => c.dirty)) && MessageBox.Show(this, "存在未保存的合并内容，仍要关闭窗口吗？", "未保存改动", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes) { e.Cancel = true; return; }
+        foreach (var child in children.ToArray()) { child.discardClosing = true; child.Close(); }
+      };
       FormClosed += (_, __) => Stop();
     }
 
@@ -66,6 +80,7 @@ namespace WiiMerge {
           Close(); return;
         }
         Trace("WebView2 runtime available; starting comparison engine");
+        if (sharedOwner == null) {
         var start = new ProcessStartInfo {
           FileName = Path.Combine(root, "runtime", "node.exe"),
           Arguments = "--max-old-space-size=768 \"" + Path.Combine(root, "app", "server.cjs") + "\"",
@@ -85,13 +100,15 @@ namespace WiiMerge {
         if (line == null) throw new Exception("本地比较引擎未能启动，请重新解压完整安装包。");
         var ready = serializer.Deserialize<Dictionary<string, object>>(line);
         Trace("comparison engine ready");
+        launchUrl = (string)ready["launchURL"];
         origin = new Uri((string)ready["origin"]);
         if (origin.Scheme != "http" || origin.Host != "127.0.0.1") throw new Exception("无效的本地引擎地址。");
         client.BaseAddress = origin; client.DefaultRequestHeaders.Add("X-WiiMerge-Native", token);
         Trace("creating browser environment");
-        var environment = await CoreWebView2Environment.CreateAsync(null, Path.Combine(profile, "WebView2"));
+        browserEnvironment = await CoreWebView2Environment.CreateAsync(null, Path.Combine(profile, "WebView2"));
         Trace("browser environment ready; creating view");
-        await view.EnsureCoreWebView2Async(environment);
+        } else { origin = sharedOwner.origin; launchUrl = sharedOwner.launchUrl; browserEnvironment = sharedOwner.browserEnvironment; client.BaseAddress = origin; client.DefaultRequestHeaders.Add("X-WiiMerge-Native", token); }
+        await view.EnsureCoreWebView2Async(browserEnvironment);
         Trace("view ready");
         view.CoreWebView2.Settings.AreDevToolsEnabled = fixtureFile != null;
         view.CoreWebView2.Settings.AreDefaultContextMenusEnabled = true;
@@ -105,15 +122,15 @@ namespace WiiMerge {
         view.CoreWebView2.PermissionRequested += (_, e) => e.State = CoreWebView2PermissionState.Deny;
         view.CoreWebView2.WebMessageReceived += Message;
         view.CoreWebView2.NavigationCompleted += async (_, e) => {
-          if (fixtureFile == null || testStarted || !e.IsSuccess) return;
+          if ((fixtureFile == null && sharedOwner?.fixtureFile == null) || testStarted || !e.IsSuccess) return;
           Uri current;
           if (!Uri.TryCreate(view.CoreWebView2.Source, UriKind.Absolute, out current) || current.Host != origin.Host || current.Port != origin.Port || current.AbsolutePath != "/") return;
           testStarted = true;
           Trace("document loaded; running native UI checks");
-          try { await view.CoreWebView2.ExecuteScriptAsync(File.ReadAllText(Fixture("script"))); }
-          catch (Exception error) { File.WriteAllText(Fixture("result"), serializer.Serialize(new { error = error.ToString() })); }
+          try { await view.CoreWebView2.ExecuteScriptAsync(File.ReadAllText(Fixture(sharedOwner == null ? "script" : "diffScript"))); }
+          catch (Exception error) { File.WriteAllText(Fixture(sharedOwner == null ? "result" : "diffResult"), serializer.Serialize(new { error = error.ToString() })); }
         };
-        view.CoreWebView2.Navigate((string)ready["launchURL"]);
+        view.CoreWebView2.Navigate(launchUrl + detailQuery);
         Trace("navigation requested");
       } catch (Exception error) {
         if (fixtureFile != null) File.WriteAllText(Path.Combine(Path.GetDirectoryName(fixtureFile), "host-error.txt"), error.ToString());
@@ -137,15 +154,16 @@ namespace WiiMerge {
     }
 
     string Fixture(string key) {
-      if (fixtureFile == null) return null;
-      var values = serializer.Deserialize<Dictionary<string, string>>(File.ReadAllText(fixtureFile));
+      var file = fixtureFile ?? sharedOwner?.fixtureFile;
+      if (file == null) return null;
+      var values = serializer.Deserialize<Dictionary<string, string>>(File.ReadAllText(file));
       if (!values.ContainsKey(key) && (key == "open" || key == "save")) key += (key == "open" ? openIndex++ : saveIndex++).ToString();
       if (!values.ContainsKey(key)) throw new Exception("测试对话框缺少 " + key);
       return values[key];
     }
 
     string Open(string kind, bool rules = false) {
-      if (fixtureFile != null) return Fixture("open");
+      if (fixtureFile != null || sharedOwner?.fixtureFile != null) return Fixture("open");
       if (kind == "folder") {
         using (var dialog = new FolderBrowserDialog { Description = "选择比较文件夹", ShowNewFolderButton = false }) return dialog.ShowDialog(this) == DialogResult.OK ? dialog.SelectedPath : null;
       }
@@ -153,11 +171,11 @@ namespace WiiMerge {
     }
 
     string Save(string format, bool rules = false) {
-      if (fixtureFile != null) return Fixture("save");
+      if (fixtureFile != null || sharedOwner?.fixtureFile != null) return Fixture("save");
       using (var dialog = new SaveFileDialog {
         Title = rules ? "导出比较规则" : "导出比较报告", AddExtension = true, OverwritePrompt = true,
         FileName = rules ? "wiiMerge-rules.json" : "wiiMerge-" + DateTime.Now.ToString("yyyy-MM-dd") + "." + format,
-        Filter = rules ? "JSON 规则|*.json" : format == "html" ? "HTML 报告|*.html" : "Excel 工作簿|*.xlsx"
+        Filter = rules ? "JSON 规则|*.json" : format == "html" ? "HTML 报告|*.html" : format == "txt" ? "文本文件|*.txt|所有文件|*.*" : "Excel 工作簿|*.xlsx"
       }) return dialog.ShowDialog(this) == DialogResult.OK ? dialog.FileName : null;
     }
 
@@ -173,6 +191,49 @@ namespace WiiMerge {
         object result = null;
         string filename;
         switch ((string)request["method"]) {
+          case "windowAction":
+            switch ((string)args["action"]) {
+              case "minimize": WindowState = FormWindowState.Minimized; break;
+              case "maximize": MaximizedBounds = Screen.FromHandle(Handle).WorkingArea; WindowState = WindowState == FormWindowState.Maximized ? FormWindowState.Normal : FormWindowState.Maximized; break;
+              case "close": BeginInvoke(new Action(Close)); break;
+              case "drag": ReleaseCapture(); SendMessage(Handle, 0xA1, new IntPtr(2), IntPtr.Zero); break;
+              default: throw new Exception("无效的窗口操作。");
+            } result = true; break;
+          case "setDirty": dirty = Convert.ToBoolean(args["value"]); result = true; break;
+          case "openDiff": {
+            string reportId = (string)args["reportId"];
+            await Post("/native/report-info", new { id = reportId });
+            var child = new MainWindow(new string[0]);
+            child.sharedOwner = sharedOwner ?? this; child.profile = profile; child.token = token;
+            child.reportId = reportId;
+            child.detailQuery = "?view=diff&report=" + Uri.EscapeDataString(reportId) + (args.ContainsKey("itemKey") && args["itemKey"] != null ? "&item=" + Uri.EscapeDataString((string)args["itemKey"]) : "");
+            var owner = sharedOwner ?? this;
+            owner.children.Add(child);
+            child.FormClosed += async (_, __) => {
+              owner.children.Remove(child);
+              if (!owner.children.Any(c => c.reportId == reportId))
+                try { await owner.Post("/native/release-report", new { id = reportId }); } catch { }
+            };
+            child.Show(); result = true; break;
+          }
+          case "adoptFile":
+            if (fixtureFile == null && sharedOwner?.fixtureFile == null && MessageBox.Show(this,"将用选定一侧整体替换另一侧文件，并保存原文件备份。继续吗？","整文件采用",MessageBoxButtons.YesNo,MessageBoxIcon.Warning)!=DialogResult.Yes) break;
+            result = await Post("/native/adopt-file",args); break;
+          case "saveDocument": {
+            string side = (string)args["side"];
+            if (side != "left" && side != "right") throw new Exception("无效的保存方向。");
+            var info = (Dictionary<string, object>)await Post("/native/document-info", new { id = args["id"] });
+            var sides = (Dictionary<string, object>)info["sides"]; var selectedSide = (Dictionary<string, object>)sides[side];
+            bool saveAs = Convert.ToBoolean(args["saveAs"]) || !Convert.ToBoolean(selectedSide["writable"]);
+            string destination = saveAs ? Save("txt") : null;
+            if (!saveAs || destination != null) result = await Post("/native/save-document", new { id = args["id"], side, path = destination }); break;
+          }
+          case "droppedPaths": {
+            if (message.AdditionalObjects == null || message.AdditionalObjects.Count < 1 || message.AdditionalObjects.Count > 2) throw new Exception("一次拖入一个或两个文件 / 文件夹。");
+            var values = new List<object>();
+            foreach (object obj in message.AdditionalObjects) { var file = obj as CoreWebView2File; if (file == null) throw new Exception("无效的拖放文件。"); values.Add(await Post("/native/authorize", new { path = file.Path })); }
+            result = values; break;
+          }
           case "choosePath":
             string kind = (string)args["kind"];
             if (kind != "file" && kind != "folder") throw new Exception("无效的选择类型。");
@@ -192,7 +253,7 @@ namespace WiiMerge {
           case "exportRules":
             filename = Save("json", true); if (filename != null) result = await Post("/native/export-rules", new { path = filename, rules = args["rules"] }); break;
           case "test:attachFile": {
-            if (fixtureFile == null) throw new Exception("测试接口未启用。");
+            if (fixtureFile == null && sharedOwner?.fixtureFile == null) throw new Exception("测试接口未启用。");
             var document = serializer.Deserialize<Dictionary<string, object>>(await view.CoreWebView2.CallDevToolsProtocolMethodAsync("DOM.getDocument", "{}"));
             var documentRoot = (Dictionary<string, object>)document["root"];
             var node = serializer.Deserialize<Dictionary<string, object>>(await view.CoreWebView2.CallDevToolsProtocolMethodAsync("DOM.querySelector", serializer.Serialize(new { nodeId = documentRoot["nodeId"], selector = "#native-host-file-test" })));
@@ -200,12 +261,24 @@ namespace WiiMerge {
             result = true; break;
           }
           case "test:capture":
-            if (fixtureFile == null) throw new Exception("测试接口未启用。");
-            using (var image = File.Create(Fixture("screenshot"))) await view.CoreWebView2.CapturePreviewAsync(CoreWebView2CapturePreviewImageFormat.Png, image);
+            if (fixtureFile == null && sharedOwner?.fixtureFile == null) throw new Exception("测试接口未启用。");
+            using (var image = File.Create(Fixture(sharedOwner == null ? "screenshot" : "diffScreenshot"))) await view.CoreWebView2.CapturePreviewAsync(CoreWebView2CapturePreviewImageFormat.Png, image);
             result = true; break;
-          case "test:finished":
+          case "test:childStatus":
             if (fixtureFile == null) throw new Exception("测试接口未启用。");
-            File.WriteAllText(Fixture("result"), serializer.Serialize(args)); result = true; break;
+            result = File.Exists(Fixture("diffResult")) ? serializer.DeserializeObject(File.ReadAllText(Fixture("diffResult"))) : null; break;
+          case "test:resetChild":
+            if (fixtureFile == null) throw new Exception("测试接口未启用。");
+            if (File.Exists(Fixture("diffResult"))) File.Delete(Fixture("diffResult")); result = true; break;
+          case "test:dropPair":
+            if (fixtureFile == null) throw new Exception("测试接口未启用。");
+            var docForDrop = serializer.Deserialize<Dictionary<string, object>>(await view.CoreWebView2.CallDevToolsProtocolMethodAsync("DOM.getDocument", "{}"));
+            var inputForDrop = serializer.Deserialize<Dictionary<string, object>>(await view.CoreWebView2.CallDevToolsProtocolMethodAsync("DOM.querySelector", serializer.Serialize(new { nodeId = ((Dictionary<string, object>)docForDrop["root"])["nodeId"], selector = "#native-host-file-test" })));
+            await view.CoreWebView2.CallDevToolsProtocolMethodAsync("DOM.setFileInputFiles", serializer.Serialize(new { nodeId = inputForDrop["nodeId"], files = new[] { Fixture("dropLeft"), Fixture("dropRight") } })); result = true; break;
+          case "test:finished":
+            if (fixtureFile == null && sharedOwner?.fixtureFile == null) throw new Exception("测试接口未启用。");
+            args["frameless"] = FormBorderStyle == FormBorderStyle.None;
+            File.WriteAllText(Fixture(sharedOwner == null ? "result" : "diffResult"), serializer.Serialize(args)); result = true; break;
           default: throw new Exception("不允许的本机操作。");
         }
         if (!IsDisposed) view.CoreWebView2.PostWebMessageAsJson(serializer.Serialize(new { id, result }));
@@ -214,9 +287,16 @@ namespace WiiMerge {
       }
     }
 
+    protected override void WndProc(ref System.Windows.Forms.Message m) {
+      base.WndProc(ref m);
+      if (m.Msg == 0x84 && WindowState == FormWindowState.Normal) {
+        var p = PointToClient(Cursor.Position); bool l = p.X < 6, r = p.X >= ClientSize.Width - 6, t = p.Y < 6, b = p.Y >= ClientSize.Height - 6;
+        if (l || r || t || b) m.Result = new IntPtr(t ? (l ? 13 : r ? 14 : 12) : b ? (l ? 16 : r ? 17 : 15) : l ? 10 : 11);
+      }
+    }
     void Stop() {
       view.Dispose(); client.Dispose();
-      if (engine != null) {
+      if (sharedOwner == null && engine != null) {
         try { engine.StandardInput.Close(); if (!engine.WaitForExit(2500)) engine.Kill(); } catch (InvalidOperationException) { }
         engine.Dispose();
       }

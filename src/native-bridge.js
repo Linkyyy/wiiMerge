@@ -49,6 +49,19 @@ if (!window.wiiMerge && window.chrome?.webview) {
     runtime: "webview2",
     choosePath: (kind) => native("choosePath", { kind }),
     droppedPath: (file) => native("droppedPath", {}, [file]),
+    droppedPaths: (files) => native("droppedPaths", {}, [...files]),
+    windowAction: (action) => native("windowAction", { action }),
+    setDirty: (value) => native("setDirty", { value }),
+    openDiff: (value) => native("openDiff", value),
+    adoptFile: (reportId, itemKey, from) =>
+      native("adoptFile", { reportId, itemKey, from }),
+    getReport: (id) => api("report", { id }),
+    openDocument: (reportId, itemKey) =>
+      api("open-document", { reportId, itemKey }),
+    previewDocument: (id, left, right) =>
+      api("preview-document", { id, left, right }),
+    saveDocument: (id, side, saveAs = false) =>
+      native("saveDocument", { id, side, saveAs }),
     compare: (request) => api("compare", request),
     cancel: () => api("cancel"),
     exportReport: (id, format) => native("exportReport", { id, format }),

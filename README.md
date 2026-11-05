@@ -1,30 +1,45 @@
 # wiiMerge
 
-Windows 优先的本地桌面差异比较工具，使用 React 界面和共享 Node.js 比较引擎，提供 WebView2 精简版和 Electron 兼容版。支持并排查看文本、文件、文件夹、Excel 和 ZIP / WAR / JAR 的差异，导出 HTML 或 Excel 报告。所有比较在本机执行，不上传内容；只读比较，不覆盖源文件。
+Windows 优先的本地桌面差异比较工具，使用 React 界面和共享 Node.js 比较引擎，提供 WebView2 精简版和 Electron 兼容版。支持文本、文件、文件夹、Excel 和 ZIP / WAR / JAR 的差异比较，独立差分窗口、多 Tab、双向合并及 HTML / Excel 报告。所有比较在本机执行，不上传内容；合并后手动保存，覆盖前保留原文件备份。
 
 ## 使用
 
 Windows 10 / 11 x64：在 [GitHub Actions 构建页面](https://github.com/Linkyyy/wiiMerge/actions/workflows/ci.yml) 打开成功的构建记录，从 **Artifacts → wiiMerge-WebView2-Windows-x64** 下载精简版 ZIP（需要登录 GitHub）。**解压整个 ZIP 后运行 `wiiMerge.exe`**，请勿只复制启动器。无需另装 Node.js 或 Office。这是未签名的开发版便携程序。
 
-[0.1.1 精简版下载页面](https://github.com/Linkyyy/wiiMerge/actions/runs/41953611324#artifacts)
+[最新精简版构建与下载](https://github.com/Linkyyy/wiiMerge/actions/workflows/ci.yml)
 
 精简版依赖系统的 **Microsoft Edge WebView2 Runtime 和 .NET Framework 4.8**，Windows 11 通常自带；缺少 WebView2 时程序会提示微软官方安装地址。它仍然自带比较引擎，正常比较不需要联网。旧版 Electron 的规则配置继续可用。
 
-如果电脑不能安装系统组件，可下载 **wiiMerge-Windows-x64** 兼容版，解压后运行 `wiiMerge-0.1.1-Windows-x64.exe`。兼容版自带浏览器运行时，体积较大。Actions 下载有保留期限，过期后可在上述页面重新运行构建。
+如果电脑不能安装系统组件，可下载 **wiiMerge-Windows-x64** 兼容版，解压后运行 `wiiMerge-0.2.0-Windows-x64.exe`。兼容版自带浏览器运行时，体积较大。Actions 下载有保留期限，过期后可在上述页面重新运行构建。
 
-### 0.1.1 体积优化
+### 0.2.0 体积
 
 | 本地构建实测     | 原 0.1.0  | WebView2 精简版 | 减少  |
 | ---------------- | --------- | --------------- | ----- |
-| 下载文件         | 108.8 MiB | 35.2 MiB        | 67.6% |
-| 解压后的应用文件 | 421.7 MiB | 92.3 MiB        | 78.1% |
+| 下载文件         | 108.8 MiB | 35.5 MiB        | 67.3% |
+| 解压后的应用文件 | 421.7 MiB | 93.4 MiB        | 77.9% |
 
 WebView2 浏览器由系统共享，上表不包括已有系统组件的磁盘占用。精简版保留相同的比较引擎及功能；另外也优化了 Electron 兼容版的依赖和语言资源。所有发布包保留相关开源许可。具体字节数及前后对比写在下载包的 `size-report.json` 中，`SHA256SUMS.txt` 可校验解压后的文件。
 
-1. 选择「文件比较」「文件夹比较」或「文本比较」。文件和文件夹可通过选择按钮或拖放输入；文本支持直接粘贴，也可载入示例。
+1. 选择「文件比较」「文件夹比较」或「文本比较」。可一次拖入两个文件夹或文件，按拖放列表顺序填入左、右两侧；拖入后可通过交换按钮调整。文本支持直接粘贴。
 2. 按需配置「比较规则」，点击「开始比较」，或按 `Ctrl + Enter`。
-3. 左侧筛选、搜索比较条目，右侧查看并排差异。用上下箭头跳转差异，支持只看不同及自动换行。
-4. 点击「导出报告」，选择 HTML 或 Excel。导出包含全部比较条目，不受界面搜索、筛选影响。修改输入或规则后需要重新比较才能导出。
+3. 双击文件条目或点击「打开独立差分窗口」。左侧目录树展示文件及归档层级；双击 ZIP / WAR / JAR 结点，在新 Tab 浏览内部差异，支持嵌套归档。
+4. 文本差分侧栏显示每个差异块，点击跳转；用每块中间的箭头或工具栏「使用左边 / 使用右边」合并。可编辑原文、撤销合并，再分别保存左侧或右侧。Excel / 二进制支持确认后整文件采用。
+5. 点击 HTML / Excel 报告，导出差分一览和各文件明细，覆盖所有条目及归档内容，不受搜索、筛选影响。从差分窗口导出会同步当前未保存文本，并标明工作区快照。修改输入或规则后需重新比较。
+
+窗口使用嵌入式最小化、最大化和关闭按钮，拖动顶部空白处移动，双击顶部空白处切换最大化。
+
+### 合并与快捷键
+
+| 操作                       | 快捷键          |
+| -------------------------- | --------------- |
+| 开始比较                   | Ctrl + Enter    |
+| 下一处 / 上一处文本差分    | F7 / Shift + F7 |
+| 当前块：左侧内容采用到右侧 | Alt + →         |
+| 当前块：右侧内容采用到左侧 | Alt + ←         |
+| 保存当前选中的一侧         | Ctrl + S        |
+
+保存原文本会保留目标侧的编码、BOM 和换行符。保存前检查文件指纹，发现外部修改时拒绝覆盖；备份位于应用数据目录的 `backups/`，`.bak.json` 记录原路径。归档条目和粘贴文本通过「另存为」写出 UTF-8 文件，不自动回写或重新打包 ZIP / WAR / JAR。文本合并按原始文本对齐，避免忽略规则隐藏的行被误删。
 
 ## 功能
 
@@ -79,7 +94,7 @@ Linux 无图形显示器的云容器可使用以下测试方式。`--no-sandbox`
 WIIMERGE_SMOKE_HEADLESS=1 WIIMERGE_TEST_APP_PATH=.desktop-build npm run test:desktop
 ```
 
-WebView2 启动器可在 Linux 交叉编译。`npm run dist:lite` 使用固定版本的官方 Windows Node.js ZIP，并验证固定 SHA-256；WebView2 SDK 与 .NET 引用程序集由 NuGet 锁文件固定。产物在 `release/wiiMerge-0.1.1-WebView2-Windows-x64.zip`，解压文件也保留在 `.native-build/`。代理环境需在命令前设置 `NODE_USE_ENV_PROXY=1`。`WIIMERGE_DOTNET` 可指定 `dotnet` 的绝对路径。
+WebView2 启动器可在 Linux 交叉编译。`npm run dist:lite` 使用固定版本的官方 Windows Node.js ZIP，并验证固定 SHA-256；WebView2 SDK 与 .NET 引用程序集由 NuGet 锁文件固定。产物在 `release/wiiMerge-0.2.0-WebView2-Windows-x64.zip`，解压文件也保留在 `.native-build/`。代理环境需在命令前设置 `NODE_USE_ENV_PROXY=1`。`WIIMERGE_DOTNET` 可指定 `dotnet` 的绝对路径。
 
 Linux 上单独检查精简版界面与后台：先执行 `npm run build && node scripts/build-native.mjs --prepare-only`，再执行 `npm run test:native`；可用 `PLAYWRIGHT_CHROMIUM_EXECUTABLE` 指定 Chrome / Chromium。这项检查模拟原生对话框，Windows CI 则启动编译后的 WinForms + WebView2 程序，测试真实宿主消息、文件授权、拖放和导出。
 
@@ -89,11 +104,11 @@ Electron 新版本安装器使用 Node `fetch`。环境要求代理且自动下�
 NODE_USE_ENV_PROXY=1 node node_modules/electron/install.js
 ```
 
-桌面测试使用隔离的临时用户目录和测试数据；自动选择对话框的测试返回值，实际执行桥接、路径授权、后台比较及报告写入。还会检查规则保存、旧结果失效、取消任务和未授权路径拒绝。截图输出在 `artifacts/`。GitHub Actions 同时检查两种宿主，在 Windows 构建后测试真实打包程序，并检查发行包体积预算。
+桌面测试使用隔离的临时用户目录和测试数据；自动选择对话框的测试返回值，实际执行桥接、路径授权、后台比较及报告写入。覆盖独立窗口、双路径拖放、归档 Tab、按块合并、换行保留和报告明细；核心测试检查规则、安全边界和外部修改冲突。截图输出在 `artifacts/`。GitHub Actions 同时检查两种宿主，在 Windows 构建后测试真实打包程序，并检查发行包体积预算。
 
 ## 当前边界
 
-- 首版为只读差异查看器，不包含编辑合并、三方合并或目录同步。
+- 支持双向文本块合并及 Excel / 二进制整文件采用；不包含三方合并、Excel 单元格级编辑、批量目录同步或自动重新打包归档。不会通过整文件采用隐式删除目标文件。
 - 旧版 `.xls` 请先另存为 `.xlsx`；不支持 `.xlsb`、RAR、7z、加密 ZIP / Excel。
 - Excel 比较单元格内容的字符串表示，不比较单元格类型、样式、图表、宏、合并布局或公式计算过程。读取缓存值时不会重新计算公式，缓存缺失视为空值。
 - 默认每侧总输入 / 展开数据上限 128 MiB、单文件 16 MiB、5,000 个匹配条目；文件夹扫描最多 20,000 个条目、64 层。符号链接及特殊文件报告为未能比较。
@@ -114,4 +129,4 @@ tests/      自动化测试与样本生成器
 build/      应用图标
 ```
 
-Electron 主界面关闭 Node 集成，启用 context isolation、sandbox 和 CSP；IPC 只向当前主窗口开放。WebView2 精简版使用原生宿主授权文件路径，本地服务只监听 `127.0.0.1` 的随机端口；浏览器会话使用 HttpOnly / SameSite cookie，文件授权和写入另外要求仅宿主掌握的随机凭据，并拒绝跨源请求。窗口禁止导航到其他来源；比较和导出继续在有内存限制、可取消的 worker 线程中运行。没有遥测、远程页面或对外监听端口。
+Electron 主界面关闭 Node 集成，启用 context isolation、sandbox 和 CSP；IPC 只向应用创建的窗口开放。WebView2 精简版使用原生宿主授权文件路径，本地服务只监听 `127.0.0.1` 的随机端口；浏览器会话使用 HttpOnly / SameSite cookie，文件授权和写入另外要求仅宿主掌握的随机凭据，并拒绝跨源请求。窗口禁止导航到其他来源；比较和导出继续在有内存限制、可取消的 worker 线程中运行。没有遥测、远程页面或对外监听端口。

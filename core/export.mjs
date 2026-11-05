@@ -31,8 +31,8 @@ body{font:14px/1.6 system-ui,sans-serif;color:#253449;background:#f5f7fb;margin:
     .map(([k, v]) => `${v} ${report.summary[k]}`)
     .join(
       "　 /　 ",
-    )}</b><p class="meta">共 ${report.summary.total} 项；排除 ${report.summary.excluded} 项。${escape(limitsNote)}</p>${report.summary.error ? '<p class="warning">部分条目未能比较，请查看错误详情；结果不能视为完整一致。</p>' : ""}</div>${report.items
-    .map((item) => {
+    )}</b><p class="meta">共 ${report.summary.total} 项；排除 ${report.summary.excluded} 项。${escape(limitsNote)}</p>${report.summary.error ? '<p class="warning">部分条目未能比较，请查看错误详情；结果不能视为完整一致。</p>' : ""}${report.draft ? '<p class="warning">包含未保存的合并编辑，编辑条目按原文比较。</p>' : ""}</div><section><h2>差分一览</h2><table><thead><tr><th>文件</th><th>状态</th><th>类型</th></tr></thead><tbody>${report.items.map((item, index) => `<tr><td><a href="#file-${index}">${escape(item.path)}</a></td><td>${STATUS_LABEL[item.status]}</td><td>${escape(item.type)}</td></tr>`).join("")}</tbody></table></section>${report.items
+    .map((item, index) => {
       const d = item.details;
       let body = item.error
         ? `<p class="warning">${escape(item.error)}</p>`
@@ -95,7 +95,7 @@ body{font:14px/1.6 system-ui,sans-serif;color:#253449;background:#f5f7fb;margin:
       if (d?.kind === "binary")
         body += `<p>${escape(d.note)}</p><pre>左 SHA-256: ${escape(d.leftHash ?? "—")}\n右 SHA-256: ${escape(d.rightHash ?? "—")}</pre>`;
       if (d?.kind === "directory") body += `<p>${escape(d.note)}</p>`;
-      return `<section><h2>${escape(item.path)} <span class="badge">${STATUS_LABEL[item.status]} · ${escape(item.type)}</span></h2><small>左：${escape(item.leftPath ?? "不存在")} / 右：${escape(item.rightPath ?? "不存在")}</small>${body}</section>`;
+      return `<section id="file-${index}"><h2>${escape(item.path)} <span class="badge">${STATUS_LABEL[item.status]} · ${escape(item.type)}</span></h2><small>左：${escape(item.leftPath ?? "不存在")} / 右：${escape(item.rightPath ?? "不存在")}</small>${body}</section>`;
     })
     .join(
       "",
@@ -117,6 +117,10 @@ export async function excelReport(report) {
     ["排除条目", report.summary.excluded],
     ["说明", limitsNote],
     ["规则", JSON.stringify(report.rules)],
+  ]);
+  summary.addRow([
+    "工作区编辑",
+    report.draft ? "包含未保存编辑；编辑条目按原文比较" : "已保存文件快照",
   ]);
   const files = wb.addWorksheet("文件清单");
   files.addRow([

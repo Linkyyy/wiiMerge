@@ -5,6 +5,7 @@ import { randomBytes, timingSafeEqual } from "node:crypto";
 import { Worker } from "node:worker_threads";
 import { pathToFileURL } from "node:url";
 import { validateRules, DEFAULT_RULES } from "../core/rules.mjs";
+import { Workspace } from "../core/workspace.mjs";
 
 const json = (response, status, value) => {
   response.writeHead(status, {
@@ -85,6 +86,10 @@ export async function createService({
       ? JSON.parse(Buffer.concat(chunks).toString("utf8"))
       : {};
   }
+  const workspace = new Workspace(execute, dataDir, (report) => {
+    for (const client of listeners)
+      client.write(`data: ${JSON.stringify({ reportUpdated: report })}\n\n`);
+  });
 
   const server = http.createServer(async (request, response) => {
     try {
@@ -99,7 +104,7 @@ export async function createService({
       }
       if (request.method === "GET" && url.pathname === `/launch/${session}`) {
         response.writeHead(302, {
-          Location: "/",
+          Location: "/" + url.search,
           "Set-Cookie": `${cookieName}=${session}; HttpOnly; SameSite=Strict; Path=/`,
           "Cache-Control": "no-store",
           "Referrer-Policy": "no-referrer",
@@ -173,9 +178,40 @@ export async function createService({
                   throw new Error("请通过选择按钮或拖放授权读取路径");
             input.rules = validateRules(input.rules);
             lastReport = await execute({ action: "compare", request: input });
-            result = lastReport;
+            result = workspace.add(lastReport, input);
             break;
           }
+          case "/api/report":
+            result = workspace.getReport(input.id);
+            break;
+          case "/native/report-info":
+            result = { id: workspace.session(input.id).report.id };
+            break;
+          case "/native/release-report":
+            workspace.release(input.id);
+            result = true;
+            break;
+          case "/api/open-document":
+            result = await workspace.open(input.reportId, input.itemKey);
+            break;
+          case "/api/preview-document":
+            result = workspace.preview(input.id, input.left, input.right);
+            break;
+          case "/native/document-info": {
+            const d = workspace.describe(workspace.document(input.id));
+            result = { id: d.id, sides: d.sides };
+            break;
+          }
+          case "/native/save-document":
+            result = await workspace.save(input.id, input.side, input.path);
+            break;
+          case "/native/adopt-file":
+            result = await workspace.adoptFile(
+              input.reportId,
+              input.itemKey,
+              input.from,
+            );
+            break;
           case "/api/cancel":
             activeWorker?.terminate();
             result = true;
@@ -204,11 +240,10 @@ export async function createService({
           case "/native/export-report": {
             if (!["html", "xlsx"].includes(input.format))
               throw new Error("不支持的导出格式");
-            if (!lastReport || input.id !== lastReport.id)
-              throw new Error("请先完成一次比较");
+            const exportReport = workspace.getReport(input.id);
             const content = await execute({
               action: "export",
-              report: lastReport,
+              report: exportReport,
               format: input.format,
             });
             await fs.writeFile(

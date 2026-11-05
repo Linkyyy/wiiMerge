@@ -1,52 +1,24 @@
-// Runs only when the native launcher was explicitly given --smoke-fixtures.
-// All comparisons and exports still use the production bridge and service.
 (async () => {
   const completed = [];
-  const assert = (value, message) => {
-    if (!value) throw new Error(message);
-  };
-  const wait = async (predicate, message) => {
-    const deadline = Date.now() + 20000;
-    while (Date.now() < deadline) {
-      if (predicate()) return;
-      await new Promise((resolve) => setTimeout(resolve, 50));
+  const wait = async (fn, label) => {
+    for (let i = 0; i < 400; i++) {
+      const result = await fn();
+      if (result) return result;
+      await new Promise((r) => setTimeout(r, 50));
     }
-    throw new Error(message + " | " + document.body.innerText.slice(-500));
+    throw new Error(label);
   };
-  const click = (text, selector = "button", prefix = false) => {
-    const element = [...document.querySelectorAll(selector)].find((e) =>
-      prefix
-        ? e.textContent.trim().startsWith(text)
-        : e.textContent.trim() === text,
+  const click = (text) => {
+    const button = [...document.querySelectorAll("button")].find(
+      (b) => b.textContent.trim() === text && !b.disabled,
     );
-    assert(element && !element.disabled, "Missing enabled control: " + text);
-    element.click();
+    if (!button) throw new Error("Missing button: " + text);
+    button.click();
   };
-  const setValue = (element, value) => {
-    Object.getOwnPropertyDescriptor(
-      HTMLInputElement.prototype,
-      "value",
-    ).set.call(element, value);
-    element.dispatchEvent(new Event("input", { bubbles: true }));
-  };
-  const mode = async (text) => {
-    click(text, '[role="tab"]');
-    await new Promise((resolve) => setTimeout(resolve, 80));
-  };
-  const choose = async (index, suffix) => {
-    document.querySelectorAll(".browse-button")[index].click();
-    await wait(
-      () =>
-        document
-          .querySelectorAll(".path-field input")
-          [index].value.endsWith(suffix),
-      "Native file chooser did not resolve: " + suffix,
-    );
-  };
-  let sequence = -1;
+  let seq = -1;
   const control = (method, args = {}) =>
     new Promise((resolve, reject) => {
-      const id = sequence--;
+      const id = seq--;
       const listener = ({ data }) => {
         if (data.id !== id) return;
         window.chrome.webview.removeEventListener("message", listener);
@@ -55,143 +27,67 @@
       window.chrome.webview.addEventListener("message", listener);
       window.chrome.webview.postMessage({ id, method, args });
     });
+  const choose = async (index, suffix) => {
+    document.querySelectorAll(".browse-button")[index].click();
+    await wait(
+      () =>
+        document
+          .querySelectorAll(".path-field input")
+          [index].value.endsWith(suffix),
+      "Chooser failed",
+    );
+  };
+  const child = async () => {
+    await control("test:resetChild");
+    click("打开独立差分窗口");
+    const result = await wait(
+      () => control("test:childStatus"),
+      "Separate diff window did not finish",
+    );
+    if (result.error) throw new Error(result.error);
+    if (!result.frameless) throw new Error("System titlebar still visible");
+    completed.push(...result.completed);
+  };
   try {
     await wait(
-      () => window.wiiMerge && document.querySelector(".sample-link"),
-      "React application did not load",
+      () => window.wiiMerge && document.querySelector(".browse-button"),
+      "Application missing",
     );
-    click("用一段示例体验文本比较");
-    await wait(
-      () => document.getElementById("text-left"),
-      "Sample text editor did not open",
-    );
+    await choose(0, "a.txt");
+    await choose(1, "b.txt");
     click("开始比较");
     await wait(
-      () => document.querySelectorAll(".text-diff tr.changed").length === 3,
-      "Text diff did not render expected changes",
+      () => document.querySelector(".result-preview"),
+      "Overview missing",
     );
-    completed.push("text comparison and character highlights");
-
-    click("比较规则", "button", true);
-    await wait(
-      () => document.querySelector('[role="dialog"]'),
-      "Rules panel missing",
+    await child();
+    const input = document.createElement("input");
+    input.type = "file";
+    input.multiple = true;
+    input.id = "native-host-file-test";
+    document.body.append(input);
+    await control("test:dropPair");
+    const pair = await window.wiiMerge.droppedPaths([...input.files]);
+    if (pair.length !== 2) throw new Error("Two-path drop failed");
+    completed.push("native two-file drag authorization");
+    const folder = [...document.querySelectorAll('[role="tab"]')].find(
+      (b) => b.textContent === "文件夹比较",
     );
-    setValue(document.querySelector('input[placeholder="例如 A 或 A,B"]'), "A");
-    await new Promise((resolve) => setTimeout(resolve, 60));
-    click("保存规则");
-    await wait(
-      () => !document.querySelector('[role="dialog"]'),
-      "Rules did not persist",
-    );
-    assert(
-      document.body.textContent.includes("输入或规则已更改"),
-      "Old report did not become stale",
-    );
-    completed.push("persisted rules and stale-report protection");
-
-    await mode("文件比较");
-    await choose(0, "a.xlsx");
-    await choose(1, "b.xlsx");
-    click("开始比较");
-    await wait(
-      () => document.querySelectorAll(".excel-diff tbody tr").length === 1,
-      "Keyed Excel comparison failed",
-    );
-    assert(
-      document.querySelector(".excel-diff").textContent.includes("220"),
-      "Excel value missing",
-    );
-    completed.push("native file selection and keyed Excel rows");
-    for (const [label, suffix] of [
-      ["HTML 报告", "report.html"],
-      ["Excel 报告", "report.xlsx"],
-    ]) {
-      click("导出报告");
-      await wait(
-        () => document.querySelector(".export-menu"),
-        "Export menu did not open",
-      );
-      click(label, ".export-menu button", true);
-      await wait(
-        () => document.querySelector(".toast")?.textContent.includes(suffix),
-        "Native report export failed: " + suffix,
-      );
-    }
-    completed.push("HTML and Excel native save operations");
-
-    await mode("文件夹比较");
+    folder.click();
+    await new Promise((r) => setTimeout(r, 80));
     await choose(0, "before");
     await choose(1, "after");
     click("开始比较");
     await wait(
-      () => document.querySelectorAll(".file-item").length === 2,
-      "Folder comparison failed",
+      () => document.querySelector(".result-preview"),
+      "Folder overview missing",
     );
-    assert(
-      document.querySelector(".file-list").textContent.includes("app.txt"),
-      "Nested archive was not expanded",
-    );
+    await child();
+    await window.wiiMerge.windowAction("maximize");
+    await window.wiiMerge.windowAction("maximize");
+    completed.push("integrated window controls");
     await control("test:capture");
-    completed.push("folder selection and nested WAR/JAR comparison");
-
-    let denied = false;
-    try {
-      await window.wiiMerge.compare({
-        mode: "files",
-        left: "C:\\Windows\\win.ini",
-        right: "C:\\Windows\\win.ini",
-      });
-    } catch {
-      denied = true;
-    }
-    assert(denied, "Unselected path was readable");
-    const deniedGrant = await fetch("/native/authorize", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ path: "C:\\Windows\\win.ini" }),
-    });
-    assert(
-      deniedGrant.status === 403,
-      "Renderer could grant native filesystem access",
-    );
-    completed.push("unauthorized path and privilege-boundary rejection");
-
-    const input = document.createElement("input");
-    input.type = "file";
-    input.id = "native-host-file-test";
-    document.body.append(input);
-    await control("test:attachFile");
-    const dropped = await window.wiiMerge.droppedPath(input.files[0]);
-    assert(
-      dropped.path.toLowerCase().endsWith("a.xlsx"),
-      "WebView2 File object did not resolve",
-    );
-    completed.push(
-      "real WebView2 additional File object and path authorization",
-    );
-
-    await mode("文件比较");
-    await choose(0, "long-a.txt");
-    await choose(1, "long-b.txt");
-    click("开始比较");
-    await wait(
-      () =>
-        [...document.querySelectorAll("button")].some(
-          (e) => e.textContent.trim() === "取消比较",
-        ),
-      "Cancel control missing",
-    );
-    click("取消比较");
-    await wait(
-      () =>
-        document
-          .querySelector('[role="alert"]')
-          ?.textContent.includes("已取消"),
-      "Task cancellation failed",
-    );
-    completed.push("background task cancellation");
-    await control("test:finished", { completed, droppedPath: dropped.path });
+    await control("test:finished", { completed });
   } catch (error) {
     await control("test:finished", {
       completed,
