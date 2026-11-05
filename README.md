@@ -4,7 +4,9 @@ Windows 优先的本地桌面差异比较工具，使用 Electron + React。支�
 
 ## 使用
 
-Windows 10 / 11 x64：运行 `release/wiiMerge-0.1.0-Windows-x64.exe`，无需另装 Node.js 或 Office。这是未签名的开发版便携程序。
+Windows 10 / 11 x64：在 [GitHub Actions 构建页面](https://github.com/Linkyyy/wiiMerge/actions/workflows/ci.yml) 打开成功的构建记录，从 **Artifacts → wiiMerge-Windows-x64** 下载 ZIP（需要登录 GitHub）。解压后运行 `wiiMerge-0.1.0-Windows-x64.exe`，无需另装 Node.js 或 Office。这是未签名的开发版便携程序。
+
+也可从源码执行 `npm run dist:win`，程序会生成在 `release/` 目录。Actions 下载有保留期限，过期后可在上述页面重新运行构建。
 
 1. 选择「文件比较」「文件夹比较」或「文本比较」。文件和文件夹可通过选择按钮或拖放输入；文本支持直接粘贴，也可载入示例。
 2. 按需配置「比较规则」，点击「开始比较」，或按 `Ctrl + Enter`。
