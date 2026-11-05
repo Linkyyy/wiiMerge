@@ -35,6 +35,8 @@ namespace WiiMerge {
     readonly HttpClient client = new HttpClient(new HttpClientHandler { UseProxy = false }) { Timeout = TimeSpan.FromSeconds(130) };
     Process engine;
     Uri origin;
+    int openIndex, saveIndex;
+    bool testStarted;
 
     public MainWindow(string[] args) {
       Text = "wiiMerge";
@@ -102,6 +104,15 @@ namespace WiiMerge {
         view.CoreWebView2.DownloadStarting += (_, e) => e.Cancel = true;
         view.CoreWebView2.PermissionRequested += (_, e) => e.State = CoreWebView2PermissionState.Deny;
         view.CoreWebView2.WebMessageReceived += Message;
+        view.CoreWebView2.NavigationCompleted += async (_, e) => {
+          if (fixtureFile == null || testStarted || !e.IsSuccess) return;
+          Uri current;
+          if (!Uri.TryCreate(view.CoreWebView2.Source, UriKind.Absolute, out current) || current.Host != origin.Host || current.Port != origin.Port || current.AbsolutePath != "/") return;
+          testStarted = true;
+          Trace("document loaded; running native UI checks");
+          try { await view.CoreWebView2.ExecuteScriptAsync(File.ReadAllText(Fixture("script"))); }
+          catch (Exception error) { File.WriteAllText(Fixture("result"), serializer.Serialize(new { error = error.ToString() })); }
+        };
         view.CoreWebView2.Navigate((string)ready["launchURL"]);
         Trace("navigation requested");
       } catch (Exception error) {
@@ -128,6 +139,7 @@ namespace WiiMerge {
     string Fixture(string key) {
       if (fixtureFile == null) return null;
       var values = serializer.Deserialize<Dictionary<string, string>>(File.ReadAllText(fixtureFile));
+      if (!values.ContainsKey(key) && (key == "open" || key == "save")) key += (key == "open" ? openIndex++ : saveIndex++).ToString();
       if (!values.ContainsKey(key)) throw new Exception("测试对话框缺少 " + key);
       return values[key];
     }
@@ -179,6 +191,21 @@ namespace WiiMerge {
             filename = Open("file", true); if (filename != null) result = await Post("/native/import-rules", new { path = filename }); break;
           case "exportRules":
             filename = Save("json", true); if (filename != null) result = await Post("/native/export-rules", new { path = filename, rules = args["rules"] }); break;
+          case "test:attachFile": {
+            if (fixtureFile == null) throw new Exception("测试接口未启用。");
+            var document = serializer.Deserialize<Dictionary<string, object>>(await view.CoreWebView2.CallDevToolsProtocolMethodAsync("DOM.getDocument", "{}"));
+            var documentRoot = (Dictionary<string, object>)document["root"];
+            var node = serializer.Deserialize<Dictionary<string, object>>(await view.CoreWebView2.CallDevToolsProtocolMethodAsync("DOM.querySelector", serializer.Serialize(new { nodeId = documentRoot["nodeId"], selector = "#native-host-file-test" })));
+            await view.CoreWebView2.CallDevToolsProtocolMethodAsync("DOM.setFileInputFiles", serializer.Serialize(new { nodeId = node["nodeId"], files = new[] { Fixture("drop") } }));
+            result = true; break;
+          }
+          case "test:capture":
+            if (fixtureFile == null) throw new Exception("测试接口未启用。");
+            using (var image = File.Create(Fixture("screenshot"))) await view.CoreWebView2.CapturePreviewAsync(CoreWebView2CapturePreviewImageFormat.Png, image);
+            result = true; break;
+          case "test:finished":
+            if (fixtureFile == null) throw new Exception("测试接口未启用。");
+            File.WriteAllText(Fixture("result"), serializer.Serialize(args)); result = true; break;
           default: throw new Exception("不允许的本机操作。");
         }
         if (!IsDisposed) view.CoreWebView2.PostWebMessageAsJson(serializer.Serialize(new { id, result }));

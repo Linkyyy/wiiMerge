@@ -9,6 +9,11 @@ import { createInterface } from "node:readline";
 import ExcelJS from "exceljs";
 import { zip, workbook } from "../tests/helpers.mjs";
 
+if (process.platform === "win32") {
+  await import("./smoke-webview2.mjs");
+  process.exit(0);
+}
+
 const root = path.resolve(import.meta.dirname, "..");
 const output = path.join(root, ".native-build");
 const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "wiimerge-webview2-"));
