@@ -1,12 +1,16 @@
 import React, { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { Maximize2, X } from "lucide-react";
 import { nearestDifference } from "../core/navigation.mjs";
 
 const colors = { added: "#49a97e", removed: "#db6868", changed: "#d79a31" };
-export default function DiffMap({
+function MapCanvas({
   navigation,
   current = -1,
   onJump,
   viewport,
+  expanded = false,
+  onExpand,
 }) {
   const host = useRef(null),
     canvas = useRef(null);
@@ -104,7 +108,13 @@ export default function DiffMap({
     if (index >= 0) onJump(index);
   };
   return (
-    <div className="diff-map" role="group" aria-label="可视化差分导航">
+    <div
+      className="diff-map"
+      role="group"
+      aria-label="可视化差分导航"
+      data-difference-count={ranges.length}
+      onDoubleClick={onExpand}
+    >
       <div className="map-labels">
         <span>左侧 · {leftTotal} 行</span>
         <span>右侧 · {rightTotal} 行</span>
@@ -126,7 +136,7 @@ export default function DiffMap({
               (ranges[current]?.[side + "Start"] || 0) + 1,
             )}
             aria-valuetext={ranges[current]?.label || "没有差异"}
-            title="点击或拖动，跳转到最近的差异位置"
+            title="点击或拖动定位差分；双击放大全屏"
             onPointerDown={(event) => {
               event.currentTarget.setPointerCapture(event.pointerId);
               pointer(event, side);
@@ -159,7 +169,91 @@ export default function DiffMap({
         <span className="added">新增</span>
         <span className="changed">修改</span>
       </div>
-      <small>点击 / 拖动定位差分</small>
+      {!expanded && (
+        <button
+          className="map-expand"
+          onClick={onExpand}
+          title="放大全屏（也可双击导航栏）"
+        >
+          <Maximize2 size={12} /> 放大导航
+        </button>
+      )}
     </div>
+  );
+}
+
+export default function DiffMap(props) {
+  const [expanded, setExpanded] = useState(false),
+    host = useRef(null),
+    dialog = useRef(null);
+  useEffect(() => {
+    if (!expanded) return;
+    const previous = document.activeElement;
+    dialog.current?.querySelector("button")?.focus();
+    const key = (event) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopPropagation();
+        setExpanded(false);
+      }
+      if (event.key === "Tab") {
+        const targets = [
+          ...dialog.current.querySelectorAll('button, [tabindex="0"]'),
+        ];
+        const index = targets.indexOf(document.activeElement);
+        event.preventDefault();
+        targets[
+          (index + (event.shiftKey ? -1 : 1) + targets.length) % targets.length
+        ]?.focus();
+      }
+    };
+    window.addEventListener("keydown", key, true);
+    return () => {
+      window.removeEventListener("keydown", key, true);
+      if (previous?.isConnected) previous.focus();
+      else host.current?.querySelector('[role="slider"]')?.focus();
+    };
+  }, [expanded]);
+  return (
+    <>
+      <div
+        className="diff-map-host"
+        ref={host}
+        inert={expanded}
+        aria-hidden={expanded || undefined}
+      >
+        <MapCanvas {...props} onExpand={() => setExpanded(true)} />
+      </div>
+      {expanded &&
+        createPortal(
+          <div
+            className="map-fullscreen"
+            ref={dialog}
+            role="dialog"
+            aria-modal="true"
+            aria-label="全屏差分导航"
+          >
+            <header>
+              <div>
+                <b>差分位置一览</b>
+                <span>双击导航栏或按 Esc 返回</span>
+              </div>
+              <button
+                className="icon-button"
+                aria-label="退出全屏导航"
+                onClick={() => setExpanded(false)}
+              >
+                <X size={19} />
+              </button>
+            </header>
+            <MapCanvas
+              {...props}
+              expanded
+              onExpand={() => setExpanded(false)}
+            />
+          </div>,
+          document.body,
+        )}
+    </>
   );
 }

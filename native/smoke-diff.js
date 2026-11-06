@@ -29,6 +29,43 @@
     );
     if (document.querySelector(".merge-table"))
       throw new Error("File opened before overview");
+    if (document.querySelector(".diff-explorer"))
+      throw new Error("Redundant file sidebar is still visible");
+    const search = async (value) => {
+      const input = document.querySelector('input[aria-label="搜索文件"]');
+      Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        "value",
+      ).set.call(input, value);
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      await new Promise((r) => setTimeout(r, 100));
+    };
+    const fullscreen = async () => {
+      if (document.querySelector(".text-navigation[open]"))
+        throw new Error("Text navigation must default to collapsed");
+      document
+        .querySelector(".diff-map")
+        .dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+      await wait(
+        () => document.querySelector(".map-fullscreen"),
+        "Fullscreen navigation missing",
+      );
+      const slider = document.querySelector(".map-fullscreen .map-right");
+      slider.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "End", bubbles: true }),
+      );
+      await wait(
+        () => slider.getAttribute("aria-valuenow") === "1851",
+        "Fullscreen navigation lost jump behavior",
+      );
+      window.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
+      );
+      await wait(
+        () => !document.querySelector(".map-fullscreen"),
+        "Fullscreen navigation did not close",
+      );
+    };
     if (report.mode === "files" && report.items[0].type === "excel") {
       document.querySelector(".overview-table tbody button").click();
       await wait(
@@ -47,6 +84,7 @@
             ?.textContent.includes("新版末尾值"),
         "Excel visual jump failed",
       );
+      await fullscreen();
       completed.push(
         "XLS/XLSX cross-format comparison and visual cell navigation",
       );
@@ -56,7 +94,7 @@
         () => document.querySelector(".merge-table"),
         "Text diff window missing",
       );
-      if (document.querySelectorAll(".hunk-navigation>button").length !== 2)
+      if (document.querySelector(".diff-map")?.dataset.differenceCount !== "2")
         throw new Error("Expected two navigation hunks");
       const slider = document.querySelector(".map-track.map-right");
       if (!slider) throw new Error("Text visual navigation missing");
@@ -67,6 +105,7 @@
         () => slider.getAttribute("aria-valuenow") === "1851",
         "Text visual jump failed",
       );
+      await fullscreen();
       for (let n = 0; n < 2; n++) {
         [...document.querySelectorAll(".merge-toolbar button")]
           .find((b) => b.textContent.trim() === "使用左边")
@@ -93,19 +132,16 @@
         "independent frameless window, hunk navigation, adopt-left and saved merge",
       );
     } else {
-      await wait(
-        () => document.querySelector(".tree-scroll"),
-        "Archive tree missing",
-      );
-      const archive = [...document.querySelectorAll(".nav-tree-row")].find(
-        (b) => b.textContent.includes("app.war"),
-      );
+      const archive = [
+        ...document.querySelectorAll(".overview-table tbody tr"),
+      ].find((r) => r.textContent.includes("app.war"));
       if (!archive) throw new Error("WAR container missing");
       archive.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
       await wait(
         () => document.querySelectorAll(".document-tabs>div").length >= 2,
         "Archive Tab missing",
       );
+      await search("app.txt");
       const open = [...document.querySelectorAll(".overview-table tr")]
         .find((r) => r.textContent.includes("app.txt"))
         ?.querySelector("button");
@@ -130,6 +166,7 @@
         () => document.querySelector(".overview-table"),
         "Archive overview missing",
       );
+      await search("app.txt");
       const duplicate = [
         ...document.querySelectorAll(".overview-table tbody tr"),
       ].find((row) => row.textContent.includes("同名#2"));

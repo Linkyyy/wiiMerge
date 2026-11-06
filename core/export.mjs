@@ -34,7 +34,7 @@ body{font:14px/1.6 system-ui,sans-serif;color:#253449;background:#f5f7fb;margin:
     .map(([k, v]) => `${v} ${report.summary[k]}`)
     .join(
       "　 /　 ",
-    )}</b><p class="meta">共 ${report.summary.total} 项；排除 ${report.summary.excluded} 项。${escape(limitsNote)}</p>${report.summary.error ? '<p class="warning">部分条目未能比较，请查看错误详情；结果不能视为完整一致。</p>' : ""}${archiveNotes}${report.draft ? '<p class="warning">包含未保存的合并编辑，编辑条目按原文比较。</p>' : ""}</div><section><h2>差分一览</h2><table><thead><tr><th>文件</th><th>状态</th><th>类型</th></tr></thead><tbody>${report.items.map((item, index) => `<tr><td><a href="#file-${index}">${escape(item.path)}</a></td><td>${STATUS_LABEL[item.status]}</td><td>${escape(item.type)}</td></tr>`).join("")}</tbody></table></section>${report.items
+    )}</b><p class="meta">共 ${report.summary.total} 项；排除 ${report.summary.excluded} 项。${escape(limitsNote)}</p>${report.summary.error ? '<p class="warning">部分条目未能比较，请查看错误详情；结果不能视为完整一致。</p>' : ""}${archiveNotes}${report.draft ? '<p class="warning">包含未保存的合并编辑，编辑条目按原文比较。</p>' : ""}</div>${report.folders?.length ? `<section><h2>文件夹与归档差分一览</h2>${table(["路径", "类型", "状态", "内部文件", "差分文件", "说明"], report.folders.map((f) => row([f.path, f.type === "archive" ? "归档" : "文件夹", STATUS_LABEL[f.status], f.counts.total, f.counts.total - f.counts.equal, f.error || ""], f.status)).join(""))}</section>` : ""}<section><h2>差分一览</h2><table><thead><tr><th>文件</th><th>状态</th><th>类型</th></tr></thead><tbody>${report.items.map((item, index) => `<tr><td><a href="#file-${index}">${escape(item.path)}</a></td><td>${STATUS_LABEL[item.status]}</td><td>${escape(item.type)}</td></tr>`).join("")}</tbody></table></section>${report.items
     .map((item, index) => {
       const d = item.details;
       let body = item.error
@@ -141,6 +141,30 @@ export async function excelReport(report) {
         w.path,
         w.count,
         w.directory ? "重复目录合并" : "各文件按出现序号分别比较",
+      ]);
+  }
+  if (report.folders?.length) {
+    const folders = wb.addWorksheet("文件夹与归档");
+    folders.addRow([
+      "路径",
+      "类型",
+      "状态",
+      "左侧路径",
+      "右侧路径",
+      "内部文件",
+      "差分文件",
+      "说明",
+    ]);
+    for (const f of report.folders)
+      folders.addRow([
+        f.path,
+        f.type === "archive" ? "归档" : "文件夹",
+        STATUS_LABEL[f.status],
+        f.leftPath,
+        f.rightPath,
+        f.counts.total,
+        f.counts.total - f.counts.equal,
+        f.error || "",
       ]);
   }
   const files = wb.addWorksheet("文件清单");

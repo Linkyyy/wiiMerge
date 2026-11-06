@@ -100,6 +100,7 @@ try {
             view: "diff",
             report: a.reportId,
             ...(a.itemKey ? { item: a.itemKey } : {}),
+            ...(a.folderKey ? { folder: a.folderKey } : {}),
           }),
       );
       return true;
@@ -169,12 +170,18 @@ try {
   await page.getByRole("button", { name: "打开独立差分窗口" }).click();
   await expect.poll(() => windows.length).toBe(1);
   const diff = windows[0];
-  await diff.locator(".nav-tree-row").filter({ hasText: "app.war" }).dblclick();
+  await diff
+    .locator(".overview-table tbody tr")
+    .filter({ hasText: "app.war" })
+    .dblclick();
   await expect(diff.locator(".document-tabs>div")).toHaveCount(2);
+  await diff
+    .getByRole("textbox", { name: "搜索文件", exact: true })
+    .fill("app.txt");
   await diff
     .locator(".overview-table tbody tr")
     .filter({ hasText: "同名#2" })
-    .getByRole("button", { name: "打开差分", exact: true })
+    .getByRole("button", { name: "查看差分", exact: true })
     .click();
   await diff.locator(".merge-table").waitFor();
   await expect(diff.locator(".merge-table")).toContainText("before");

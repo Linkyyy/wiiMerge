@@ -12,6 +12,7 @@ import {
   isWorkbook,
   archiveDisplayPath,
 } from "./archive.mjs";
+import { mergeFolders, updateFolderStatuses } from "./folders.mjs";
 import { safeRead, inspectFile } from "./io.mjs";
 export { safeRead } from "./io.mjs";
 
@@ -38,20 +39,36 @@ export function decode(buffer, encoding) {
 async function collectSource(filename, rules, progress) {
   const matcher = pathMatcher(rules),
     entries = new Map(),
+    containers = new Map(),
     warnings = [];
   let excluded = 0;
-  const add = (entry) => {
+  const keyFor = (entry) => {
     const matchedPath = matcher.key(entry.path);
     if (!matchedPath) throw new Error(`路径匹配规则产生空路径：${entry.path}`);
     const key = JSON.stringify([
       matchedPath,
       (entry.duplicates || []).map(([p, n]) => [matcher.key(p), n]),
     ]);
+    return key;
+  };
+  const add = (entry) => {
+    const key = keyFor(entry);
     if (entries.has(key))
       throw new Error(
         `路径匹配冲突：「${entries.get(key).path}」与「${entry.path}」；请调整大小写或路径替换规则`,
       );
     entries.set(key, entry);
+    return key;
+  };
+  const container = (entry) => {
+    const key = keyFor(entry),
+      old = containers.get(key);
+    if (old && old.path !== entry.path)
+      throw new Error(
+        `路径匹配冲突：「${old.path}」与「${entry.path}」；请调整匹配规则`,
+      );
+    containers.set(key, { ...old, ...entry });
+    return key;
   };
   const expand = async (
     buffer,
@@ -61,6 +78,7 @@ async function collectSource(filename, rules, progress) {
     archiveSteps = [],
     duplicates = [],
     notices = [],
+    parentKey = null,
   ) => {
     if (depth > LIMITS.depth) throw new Error("嵌套归档超过 3 层上限");
     const archive = await readArchive(buffer);
@@ -99,12 +117,33 @@ async function collectSource(filename, rules, progress) {
           count: item.duplicateCount,
           directory: !!item.directory,
         });
+      // ZIP directory records are optional. Materialize implied parents too.
+      let itemParent = parentKey;
+      const parts = item.name.replace(/\/$/, "").split("/");
+      for (let n = 1; n < parts.length; n++) {
+        const directoryPath = parts.slice(0, n).join("/");
+        itemParent = container({
+          path: prefix + directoryPath,
+          displayPath: displayPrefix + archiveDisplayPath(directoryPath),
+          kind: "directory",
+          duplicates,
+          parentKey: itemParent,
+        });
+      }
       if (item.directory) {
+        container({
+          path: rel.replace(/\/$/, ""),
+          displayPath: displayPath.replace(/\/$/, ""),
+          kind: "directory",
+          duplicates: variants,
+          parentKey: itemParent,
+        });
         if (!populated.has(item.name))
           add({
             path: rel.replace(/\/$/, ""),
             displayPath: displayPath.replace(/\/$/, ""),
             kind: "directory",
+            parentKey: itemParent,
             size: 0,
             archiveSteps: steps,
             duplicates: variants,
@@ -113,6 +152,13 @@ async function collectSource(filename, rules, progress) {
         continue;
       }
       if (isArchive(item.name)) {
+        const archiveKey = container({
+          path: rel,
+          displayPath,
+          kind: "archive",
+          duplicates: variants,
+          parentKey: itemParent,
+        });
         try {
           await expand(
             item.buffer,
@@ -122,9 +168,12 @@ async function collectSource(filename, rules, progress) {
             steps,
             variants,
             itemNotices,
+            archiveKey,
           );
         } catch (error) {
+          containers.get(archiveKey).error = error.message;
           add({
+            parentKey: itemParent,
             path: rel,
             displayPath,
             archiveSteps: steps,
@@ -135,6 +184,7 @@ async function collectSource(filename, rules, progress) {
         }
       } else {
         add({
+          parentKey: itemParent,
           path: rel,
           displayPath,
           archiveSteps: steps,
@@ -146,11 +196,16 @@ async function collectSource(filename, rules, progress) {
       }
     }
   };
-  const walk = async (dir, prefix = "", depth = 0) => {
+  const walk = async (dir, prefix = "", depth = 0, parentKey = null) => {
     if (depth > 64) throw new Error("文件夹嵌套超过 64 层");
     const children = await fs.readdir(dir, { withFileTypes: true });
     if (!children.length && prefix)
-      add({ path: prefix.replace(/\/$/, ""), kind: "directory", size: 0 });
+      add({
+        path: prefix.replace(/\/$/, ""),
+        kind: "directory",
+        parentKey: containers.get(parentKey)?.parentKey ?? null,
+        size: 0,
+      });
     children.sort((a, b) => a.name.localeCompare(b.name, "en"));
     for (const child of children) {
       const rel = prefix + child.name,
@@ -160,37 +215,59 @@ async function collectSource(filename, rules, progress) {
         continue;
       }
       if (child.isSymbolicLink()) {
-        add({ path: rel, error: "符号链接已跳过，避免读取比较范围外的数据" });
+        add({
+          path: rel,
+          parentKey,
+          error: "符号链接已跳过，避免读取比较范围外的数据",
+        });
         continue;
       }
       if (child.isDirectory()) {
-        await walk(absolute, `${rel}/`, depth + 1);
+        const directoryKey = container({
+          path: rel,
+          displayPath: archiveDisplayPath(rel),
+          kind: "directory",
+          parentKey,
+        });
+        await walk(absolute, `${rel}/`, depth + 1, directoryKey);
         continue;
       }
       if (!child.isFile()) {
-        add({ path: rel, error: "不支持设备、管道或特殊文件" });
+        add({ path: rel, parentKey, error: "不支持设备、管道或特殊文件" });
         continue;
       }
       progress?.({ phase: "scan", message: `正在扫描 ${rel}` });
       try {
         const stat = await fs.lstat(absolute);
-        if (isArchive(rel))
+        if (isArchive(rel)) {
+          const archiveKey = container({
+            path: rel,
+            displayPath: archiveDisplayPath(rel),
+            kind: "archive",
+            parentKey,
+          });
           await expand(
             await safeRead(absolute),
             `${rel}!/`,
             0,
             `${archiveDisplayPath(rel)}!/`,
             [{ name: rel, occurrence: 1 }],
+            [],
+            [],
+            archiveKey,
           );
-        else
+        } else
           add({
             path: rel,
+            parentKey,
             size: stat.size,
             file: absolute,
             read: () => safeRead(absolute),
           });
       } catch (error) {
-        add({ path: rel, error: error.message });
+        const failed = containers.get(keyFor({ path: rel }));
+        if (failed) failed.error = error.message;
+        add({ path: rel, parentKey, error: error.message });
       }
     }
   };
@@ -203,6 +280,7 @@ async function collectSource(filename, rules, progress) {
   else if (stat.isFile())
     return {
       tree: false,
+      containers,
       entries: new Map([
         [
           "file",
@@ -220,6 +298,7 @@ async function collectSource(filename, rules, progress) {
   else throw new Error("请选择普通文件或文件夹");
   return {
     tree: true,
+    containers,
     entries,
     excluded,
     warnings,
@@ -234,6 +313,11 @@ async function compareEntry(key, left, right, rules) {
       right?.displayPath ??
       left?.displayPath ??
       archiveDisplayPath(right?.path ?? left.path),
+    leftParent: left?.parentKey ? "folder:" + left.parentKey : null,
+    rightParent: right?.parentKey ? "folder:" + right.parentKey : null,
+    parentKey: (right ?? left)?.parentKey
+      ? "folder:" + (right ?? left).parentKey
+      : null,
     leftPath: left?.path ?? null,
     rightPath: right?.path ?? null,
     leftSize: left?.size ?? null,
@@ -263,7 +347,7 @@ async function compareEntry(key, left, right, rules) {
         note:
           left && right && left.kind !== right.kind
             ? "同名路径类型不同：一侧是文件，另一侧是空文件夹。"
-            : "空文件夹（含文件的目录通过下属文件进行比较）。",
+            : "空文件夹。文件夹状态同时汇总下属对象的差分。",
       };
       if (left && right) item.status = item.details.equal ? "equal" : "changed";
       return item;
@@ -361,6 +445,7 @@ export async function compare(request, onProgress) {
   if (!["text", "files", "folders"].includes(mode))
     throw new Error("无效的比较模式");
   let items,
+    folders = [],
     warnings = [],
     excluded = 0;
   if (mode === "text") {
@@ -401,6 +486,7 @@ export async function compare(request, onProgress) {
     const keys = [
       ...new Set([...left.entries.keys(), ...right.entries.keys()]),
     ].sort((a, b) => a.localeCompare(b, "en"));
+    folders = mergeFolders(left, right);
     items = [];
     excluded = left.excluded + right.excluded;
     for (const key of keys) {
@@ -436,7 +522,7 @@ export async function compare(request, onProgress) {
     completed: items.length,
     total: items.length,
   });
-  return {
+  return updateFolderStatuses({
     id: randomUUID(),
     createdAt: new Date().toISOString(),
     durationMs: Date.now() - started,
@@ -446,6 +532,7 @@ export async function compare(request, onProgress) {
     rules,
     summary,
     warnings,
+    folders,
     items,
-  };
+  });
 }

@@ -113,6 +113,29 @@
       () => document.documentElement.classList.contains("window-maximized"),
       "Maximized state missing",
     );
+    const geometry = await control("test:windowGeometry");
+    const { bounds, work } = geometry;
+    if (
+      bounds.x < work.x - 2 ||
+      bounds.y < work.y - 2 ||
+      bounds.x + bounds.width > work.x + work.width + 2 ||
+      bounds.y + bounds.height > work.y + work.height + 2
+    )
+      throw new Error(
+        "Maximized window escaped the current display work area: " +
+          JSON.stringify(geometry),
+      );
+    const expected = [
+      { x: 0, y: 0, width: 2560, height: 1400 },
+      { x: 40, y: 0, width: 1880, height: 1080 },
+      { x: 0, y: 40, width: 2560, height: 1400 },
+      { x: 0, y: 0, width: 2560, height: 1400 },
+    ];
+    if (JSON.stringify(geometry.cases) !== JSON.stringify(expected))
+      throw new Error(
+        "Multi-monitor coordinate regression: " +
+          JSON.stringify(geometry.cases),
+      );
     await window.wiiMerge.windowAction("maximize");
     await wait(
       () => !document.documentElement.classList.contains("window-maximized"),

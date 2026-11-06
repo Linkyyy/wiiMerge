@@ -1,3 +1,4 @@
+import { updateFolderStatuses } from "./folders.mjs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { randomUUID, createHash } from "node:crypto";
@@ -147,7 +148,7 @@ export class Workspace {
       }
     for (const k of ["added", "removed", "changed", "equal", "error"])
       report.summary[k] = report.items.filter((i) => i.status === k).length;
-    return report;
+    return updateFolderStatuses(report);
   }
   async open(reportId, itemKey) {
     const old = [...this.documents.values()].find(

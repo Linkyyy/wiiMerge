@@ -3,11 +3,8 @@ import {
   Archive,
   ArrowLeft,
   ArrowRight,
-  ChevronDown,
-  ChevronRight,
   Download,
   FileText,
-  Folder,
   LoaderCircle,
   Plus,
   RotateCcw,
@@ -15,7 +12,7 @@ import {
   X,
 } from "lucide-react";
 import Titlebar from "./Titlebar.jsx";
-import Pagination, { PAGE_SIZE, usePagination } from "./Pagination.jsx";
+import FolderOverview from "./FolderOverview.jsx";
 import { Detail, CharacterDiff } from "./App.jsx";
 import { adoptHunk, textModel } from "../core/hunks.mjs";
 import { textNavigation } from "../core/navigation.mjs";
@@ -24,112 +21,27 @@ import ArchiveWarnings from "./ArchiveWarnings.jsx";
 import useDiffViewport from "./useDiffViewport.js";
 
 const api = window.wiiMerge;
-const labels = {
-  changed: "有差异",
-  equal: "一致",
-  added: "仅右侧",
-  removed: "仅左侧",
-  error: "未能比较",
-};
 const base = (p) => p.split(/[\\/]/).pop();
-function treeFor(items, prefix = "") {
-  const root = { children: new Map() };
-  for (const item of items) {
-    if (!item.path.startsWith(prefix)) continue;
-    const parts = item.path.slice(prefix.length).split("/");
-    let node = root,
-      key = prefix;
-    parts.forEach((part, index) => {
-      key += part;
-      if (!node.children.has(part))
-        node.children.set(part, {
-          key,
-          name: part.replace(/!$/, ""),
-          archive: part.endsWith("!"),
-          children: new Map(),
-          status: "equal",
-        });
-      node = node.children.get(part);
-      if (item.status === "error") node.status = "error";
-      else if (node.status !== "error" && item.status !== "equal")
-        node.status = "changed";
-      if (index === parts.length - 1) node.item = item;
-      key += "/";
-    });
-  }
-  return root;
-}
-function Tree({ node, level = 0, open }) {
-  const [expanded, setExpanded] = useState(false);
-  const [limit, setLimit] = useState(PAGE_SIZE);
-  const children = [...node.children.values()];
-  const renderChildren = (depth) => (
-    <>
-      {children.slice(0, limit).map((n) => (
-        <Tree key={n.key} node={n} level={depth} open={open} />
-      ))}
-      {children.length > limit && (
-        <button
-          className="tree-load-more"
-          style={{ paddingLeft: 10 + depth * 15 }}
-          onClick={() => setLimit((n) => n + PAGE_SIZE)}
-        >
-          继续显示（{limit} / {children.length}）
-        </button>
-      )}
-    </>
-  );
-  if (!node.name) return renderChildren(0);
-  const branch = node.children.size > 0,
-    status = node.status;
-  return (
-    <>
-      <button
-        className={`nav-tree-row ${status}`}
-        style={{ paddingLeft: 10 + level * 15 }}
-        title={node.key}
-        onClick={() => (branch ? setExpanded((v) => !v) : open(node))}
-        onDoubleClick={() => open(node)}
-      >
-        {branch ? (
-          expanded ? (
-            <ChevronDown size={12} />
-          ) : (
-            <ChevronRight size={12} />
-          )
-        ) : (
-          <span className="tree-spacer" />
-        )}
-        {node.archive ? (
-          <Archive size={15} />
-        ) : branch ? (
-          <Folder size={15} />
-        ) : (
-          <FileText size={15} />
-        )}
-        <span>{node.name}</span>
-        <i className={`status-dot ${node.item?.status || status}`} />
-      </button>
-      {branch && expanded && renderChildren(level + 1)}
-    </>
-  );
-}
-
 export default function DiffWindow() {
   const query = new URLSearchParams(location.search),
     reportId = query.get("report"),
     initial = query.get("item");
   const [report, setReport] = useState(null),
     [tabs, setTabs] = useState([
-      { id: "overview", type: "archive", prefix: "", name: "差分一览" },
+      {
+        id: "overview",
+        type: "archive",
+        folderKey: query.get("folder") || null,
+        name: "差分一览",
+      },
     ]),
     [active, setActive] = useState("overview"),
     [docs, setDocs] = useState({}),
     [error, setError] = useState(""),
     [message, setMessage] = useState(""),
     [busy, setBusy] = useState(false),
-    [search, setSearch] = useState(""),
-    [onlyDiff, setOnlyDiff] = useState(false);
+    [onlyDiff, setOnlyDiff] = useState(false),
+    [filter, setFilter] = useState("all");
   const docsRef = useRef(docs);
   docsRef.current = docs;
   const dirty = Object.values(docs).some(
@@ -167,24 +79,6 @@ export default function DiffWindow() {
     item.leftPath.split(".").pop().toLowerCase() !==
       item.rightPath.split(".").pop().toLowerCase();
   const doc = docs[tab.itemKey];
-  const scoped = useMemo(
-    () =>
-      (report?.items || []).filter(
-        (i) =>
-          (tab.type !== "archive" || i.path.startsWith(tab.prefix)) &&
-          (!onlyDiff || i.status !== "equal") &&
-          i.path.toLowerCase().includes(search.toLowerCase()),
-      ),
-    [report, tab, search, onlyDiff],
-  );
-  const tree = useMemo(
-    () => treeFor(scoped, tab.type === "archive" ? tab.prefix : ""),
-    [scoped, tab],
-  );
-  const overviewPages = usePagination(
-    scoped,
-    JSON.stringify([tab.id, onlyDiff, search]),
-  );
   async function openItem(i) {
     const id = "file:" + i.key;
     const versions = (i.rightArchiveSteps || i.leftArchiveSteps || [])
@@ -209,19 +103,25 @@ export default function DiffWindow() {
       }
     }
   }
-  function openNode(node) {
-    if (node.archive || (!node.item && node.children.size)) {
-      const id = "archive:" + node.key;
-      setTabs((ts) =>
-        ts.some((t) => t.id === id)
-          ? ts
-          : [
-              ...ts,
-              { id, type: "archive", name: node.name, prefix: node.key + "/" },
-            ],
-      );
-      setActive(id);
-    } else if (node.item) openItem(node.item);
+  function openArchive(folder) {
+    const id = "archive:" + folder.key;
+    setTabs((ts) =>
+      ts.some((t) => t.id === id)
+        ? ts
+        : [
+            ...ts,
+            {
+              id,
+              type: "archive",
+              name: base(folder.path),
+              folderKey: folder.key,
+            },
+          ],
+    );
+    setActive(id);
+  }
+  function navigate(folderKey) {
+    setTabs((ts) => ts.map((t) => (t.id === tab.id ? { ...t, folderKey } : t)));
   }
   function change(d) {
     setDocs((ds) => ({ ...ds, [d.itemKey]: d }));
@@ -292,10 +192,10 @@ export default function DiffWindow() {
       </Titlebar>
       <div className="diff-topbar">
         <b>
-          {report.summary.total} 个条目 ·{" "}
-          {report.summary.changed +
-            report.summary.added +
-            report.summary.removed}{" "}
+          {(report.objectSummary || report.summary).total} 个条目 ·{" "}
+          {(report.objectSummary || report.summary).changed +
+            (report.objectSummary || report.summary).added +
+            (report.objectSummary || report.summary).removed}{" "}
           项不同
         </b>
         <label>
@@ -330,7 +230,11 @@ export default function DiffWindow() {
         {tabs.map((t) => (
           <div key={t.id} className={active === t.id ? "active" : ""}>
             <button
-              title={t.path || t.prefix || t.name}
+              title={
+                t.path ||
+                report.folders?.find((f) => f.key === t.folderKey)?.path ||
+                t.name
+              }
               onClick={() => setActive(t.id)}
             >
               {t.type === "archive" ? (
@@ -375,69 +279,21 @@ export default function DiffWindow() {
         </div>
       )}
       <div className="diff-body">
-        <aside className="diff-explorer">
-          <div className="sidebar-title">
-            文件与归档 <small>双击归档进入新 Tab</small>
-          </div>
-          <div className="file-search">
-            <input
-              placeholder="搜索文件路径…"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
-          </div>
-          <div className="tree-scroll">
-            <Tree
-              key={tab.type === "archive" ? tab.prefix : "all"}
-              node={tree}
-              open={openNode}
-            />
-          </div>
-        </aside>
         {tab.type === "archive" ? (
           <div className="archive-overview">
-            <div className="archive-heading">
-              <Archive size={22} />
-              <div>
-                <h2>{tab.prefix || "差分一览"}</h2>
-                <p>归档在内存中展开；双击文件查看差异，双击归档打开新 Tab。</p>
-              </div>
-            </div>
-            <Pagination paging={overviewPages} label="归档一览分页" />
-            <table className="overview-table">
-              <thead>
-                <tr>
-                  <th>文件 / 虚拟路径</th>
-                  <th>类型</th>
-                  <th>状态</th>
-                  <th>操作</th>
-                </tr>
-              </thead>
-              <tbody>
-                {overviewPages.rows.map((i) => (
-                  <tr key={i.key} onDoubleClick={() => openItem(i)}>
-                    <td>{i.path.slice(tab.prefix.length)}</td>
-                    <td>{i.type}</td>
-                    <td>
-                      <span className={`status-pill ${i.status}`}>
-                        {labels[i.status]}
-                      </span>
-                    </td>
-                    <td>
-                      <button
-                        className="text-button"
-                        onClick={() => openItem(i)}
-                      >
-                        打开差分
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            {!scoped.length && (
-              <div className="detail-empty">此视图没有匹配条目</div>
-            )}
+            <FolderOverview
+              key={tab.id}
+              report={report}
+              folderKey={tab.folderKey}
+              onNavigate={navigate}
+              onOpenFile={openItem}
+              onOpenArchive={openArchive}
+              filter={onlyDiff ? "differences" : filter}
+              onFilter={(value) => {
+                setOnlyDiff(false);
+                setFilter(value);
+              }}
+            />
           </div>
         ) : item?.type === "text" && doc ? (
           <TextEditor
@@ -596,24 +452,27 @@ function TextEditor({ doc, change, save, busy, warnings }) {
           <button onClick={() => jump(current - 1)}>上一处</button>
           <button onClick={() => jump(current + 1)}>下一处</button>
         </div>
-        {model.hunks.map((h, i) => (
-          <button
-            className={current === i ? "active" : ""}
-            key={i}
-            onClick={() => jump(i)}
-          >
-            <strong>
-              差分 {i + 1} · 左 {h.leftStart + 1} / 右 {h.rightStart + 1}
-            </strong>
-            <small>
-              {(
-                model.rows[h.row]?.left ||
-                model.rows[h.row]?.right ||
-                "空行"
-              ).slice(0, 85)}
-            </small>
-          </button>
-        ))}
+        <details className="text-navigation">
+          <summary>文本导航</summary>
+          {model.hunks.map((h, i) => (
+            <button
+              className={current === i ? "active" : ""}
+              key={i}
+              onClick={() => jump(i)}
+            >
+              <strong>
+                差分 {i + 1} · 左 {h.leftStart + 1} / 右 {h.rightStart + 1}
+              </strong>
+              <small>
+                {(
+                  model.rows[h.row]?.left ||
+                  model.rows[h.row]?.right ||
+                  "空行"
+                ).slice(0, 85)}
+              </small>
+            </button>
+          ))}
+        </details>
       </aside>
       <div className="editor-main">
         <ArchiveWarnings warnings={warnings} entry />

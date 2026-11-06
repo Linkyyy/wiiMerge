@@ -170,12 +170,13 @@ async function setupIPC() {
     windowDirty.set(event.sender.id, !!value);
     return true;
   });
-  handle("open-diff", async ({ reportId, itemKey }) => {
+  handle("open-diff", async ({ reportId, itemKey, folderKey }) => {
     workspace.getReport(reportId);
     await createWindow({
       view: "diff",
       report: reportId,
       ...(itemKey ? { item: itemKey } : {}),
+      ...(folderKey ? { folder: folderKey } : {}),
     });
     return true;
   });

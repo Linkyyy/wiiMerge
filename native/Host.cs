@@ -46,6 +46,40 @@ namespace WiiMerge {
     bool dirty, discardClosing, shadowEnabled;
     [DllImport("user32.dll")] static extern bool ReleaseCapture();
     [DllImport("user32.dll")] static extern IntPtr SendMessage(IntPtr h, int m, IntPtr w, IntPtr l);
+    [StructLayout(LayoutKind.Sequential)] struct NativePoint { public int X, Y; }
+    [StructLayout(LayoutKind.Sequential)] struct NativeRect { public int Left, Top, Right, Bottom; }
+    [StructLayout(LayoutKind.Sequential)] struct MinMaxInfo { public NativePoint Reserved, MaxSize, MaxPosition, MinTrackSize, MaxTrackSize; }
+    [StructLayout(LayoutKind.Sequential)] struct MonitorInfo { public int Size; public NativeRect Monitor, Work; public uint Flags; }
+    [DllImport("user32.dll")] static extern IntPtr MonitorFromWindow(IntPtr h, uint flags);
+    [DllImport("user32.dll", CharSet = CharSet.Auto)] static extern bool GetMonitorInfo(IntPtr monitor, ref MonitorInfo info);
+
+    // WM_GETMINMAXINFO positions are relative to the monitor, not the virtual desktop.
+    static Rectangle MaximizeArea(Rectangle monitor, Rectangle work) {
+      return new Rectangle(work.Left - monitor.Left, work.Top - monitor.Top, work.Width, work.Height);
+    }
+    void ApplyMonitorBounds(IntPtr pointer) {
+      var monitor = new MonitorInfo { Size = Marshal.SizeOf(typeof(MonitorInfo)) };
+      if (!GetMonitorInfo(MonitorFromWindow(Handle, 2), ref monitor)) return;
+      var area = MaximizeArea(Rectangle.FromLTRB(monitor.Monitor.Left, monitor.Monitor.Top, monitor.Monitor.Right, monitor.Monitor.Bottom),
+        Rectangle.FromLTRB(monitor.Work.Left, monitor.Work.Top, monitor.Work.Right, monitor.Work.Bottom));
+      var limits = (MinMaxInfo)Marshal.PtrToStructure(pointer, typeof(MinMaxInfo));
+      limits.MaxPosition = new NativePoint { X = area.X, Y = area.Y };
+      limits.MaxSize = new NativePoint { X = area.Width, Y = area.Height };
+      limits.MaxTrackSize = limits.MaxSize;
+      limits.MinTrackSize.X = Math.Min(limits.MinTrackSize.X, area.Width);
+      limits.MinTrackSize.Y = Math.Min(limits.MinTrackSize.Y, area.Height);
+      Marshal.StructureToPtr(limits, pointer, false);
+    }
+    void ToggleMaximize() {
+      if (WindowState != FormWindowState.Maximized) { WindowState = FormWindowState.Maximized; return; }
+      WindowState = FormWindowState.Normal;
+      // A monitor may have been disconnected while maximized. Keep the titlebar reachable.
+      if (!Screen.AllScreens.Any(screen => Rectangle.Intersect(new Rectangle(Bounds.X, Bounds.Y, Bounds.Width, 40), screen.WorkingArea).Width >= 100)) {
+        var work = Screen.FromHandle(Handle).WorkingArea;
+        Size = new Size(Math.Min(Width, work.Width), Math.Min(Height, work.Height));
+        Location = new Point(work.Left + (work.Width - Width) / 2, work.Top + (work.Height - Height) / 2);
+      }
+    }
     [StructLayout(LayoutKind.Sequential)] struct Margins { public int Left, Right, Top, Bottom; }
     [DllImport("dwmapi.dll")] static extern int DwmIsCompositionEnabled(out bool enabled);
     [DllImport("dwmapi.dll")] static extern int DwmExtendFrameIntoClientArea(IntPtr h, ref Margins margins);
@@ -220,7 +254,7 @@ namespace WiiMerge {
           case "windowAction":
             switch ((string)args["action"]) {
               case "minimize": WindowState = FormWindowState.Minimized; break;
-              case "maximize": MaximizedBounds = Screen.FromHandle(Handle).WorkingArea; WindowState = WindowState == FormWindowState.Maximized ? FormWindowState.Normal : FormWindowState.Maximized; break;
+              case "maximize": ToggleMaximize(); break;
               case "close": BeginInvoke(new Action(Close)); break;
               case "drag": ReleaseCapture(); SendMessage(Handle, 0xA1, new IntPtr(2), IntPtr.Zero); break;
               case "resize-n": case "resize-s": case "resize-e": case "resize-w":
@@ -238,7 +272,7 @@ namespace WiiMerge {
             var child = new MainWindow(new string[0]);
             child.sharedOwner = sharedOwner ?? this; child.profile = profile; child.token = token;
             child.reportId = reportId;
-            child.detailQuery = "?view=diff&report=" + Uri.EscapeDataString(reportId) + (args.ContainsKey("itemKey") && args["itemKey"] != null ? "&item=" + Uri.EscapeDataString((string)args["itemKey"]) : "");
+            child.detailQuery = "?view=diff&report=" + Uri.EscapeDataString(reportId) + (args.ContainsKey("itemKey") && args["itemKey"] != null ? "&item=" + Uri.EscapeDataString((string)args["itemKey"]) : "") + (args.ContainsKey("folderKey") && args["folderKey"] != null ? "&folder=" + Uri.EscapeDataString((string)args["folderKey"]) : "");
             var owner = sharedOwner ?? this;
             owner.children.Add(child);
             child.FormClosed += async (_, __) => {
@@ -307,6 +341,16 @@ namespace WiiMerge {
             var docForDrop = serializer.Deserialize<Dictionary<string, object>>(await view.CoreWebView2.CallDevToolsProtocolMethodAsync("DOM.getDocument", "{}"));
             var inputForDrop = serializer.Deserialize<Dictionary<string, object>>(await view.CoreWebView2.CallDevToolsProtocolMethodAsync("DOM.querySelector", serializer.Serialize(new { nodeId = ((Dictionary<string, object>)docForDrop["root"])["nodeId"], selector = "#native-host-file-test" })));
             await view.CoreWebView2.CallDevToolsProtocolMethodAsync("DOM.setFileInputFiles", serializer.Serialize(new { nodeId = inputForDrop["nodeId"], files = new[] { Fixture("dropLeft"), Fixture("dropRight") } })); result = true; break;
+          case "test:windowGeometry":
+            if (fixtureFile == null && sharedOwner?.fixtureFile == null) throw new Exception("测试接口未启用。");
+            var screen = Screen.FromHandle(Handle);
+            result = new { bounds = new { x = Left, y = Top, width = Width, height = Height }, work = new { x = screen.WorkingArea.X, y = screen.WorkingArea.Y, width = screen.WorkingArea.Width, height = screen.WorkingArea.Height },
+              cases = new[] {
+                MaximizeArea(new Rectangle(1920, 0, 2560, 1440), new Rectangle(1920, 0, 2560, 1400)),
+                MaximizeArea(new Rectangle(-1920, 0, 1920, 1080), new Rectangle(-1880, 0, 1880, 1080)),
+                MaximizeArea(new Rectangle(0, -1440, 2560, 1440), new Rectangle(0, -1400, 2560, 1400)),
+                MaximizeArea(new Rectangle(-2560, -1440, 2560, 1440), new Rectangle(-2560, -1440, 2560, 1400))
+              }.Select(area => new { x = area.X, y = area.Y, width = area.Width, height = area.Height }).ToArray() }; break;
           case "test:finished":
             if (fixtureFile == null && sharedOwner?.fixtureFile == null) throw new Exception("测试接口未启用。");
             args["frameless"] = FormBorderStyle == FormBorderStyle.None;
@@ -325,6 +369,7 @@ namespace WiiMerge {
       // Keep the resize/snap styles for DWM shadows without a non-client border.
       if (m.Msg == 0x83 && m.WParam != IntPtr.Zero) { m.Result = IntPtr.Zero; return; }
       base.WndProc(ref m);
+      if (m.Msg == 0x24 && m.LParam != IntPtr.Zero) ApplyMonitorBounds(m.LParam);
       if (m.Msg == 0x31e) ConfigureShadow();
       if (m.Msg == 0x84 && WindowState == FormWindowState.Normal) {
         var p = PointToClient(Cursor.Position); bool l = p.X < 6, r = p.X >= ClientSize.Width - 6, t = p.Y < 6, b = p.Y >= ClientSize.Height - 6;

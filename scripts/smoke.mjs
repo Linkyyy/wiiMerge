@@ -63,11 +63,20 @@ try {
   await diff.setViewportSize({ width: 1440, height: 940 });
   await expect(diff.locator(".archive-overview")).toBeVisible();
   await expect(diff.locator(".merge-table")).toHaveCount(0);
-  await diff.getByRole("button", { name: "打开差分", exact: true }).click();
+  await diff.getByRole("button", { name: "查看差分", exact: true }).click();
   await diff.locator(".merge-table").waitFor();
-  await expect(diff.locator(".hunk-navigation>button")).toHaveCount(2);
+  await expect(diff.locator(".diff-map")).toHaveAttribute(
+    "data-difference-count",
+    "2",
+  );
   const visual = diff.getByRole("slider", { name: "右侧差异位置" });
-  await visual.click({ position: { x: 10, y: 175 } });
+  await expect(diff.locator(".text-navigation")).not.toHaveAttribute(
+    "open",
+    "",
+  );
+  await expect(diff.locator(".diff-explorer")).toHaveCount(0);
+  const mapSize = await visual.boundingBox();
+  await visual.click({ position: { x: 10, y: mapSize.height * 0.93 } });
   await expect(visual).toHaveAttribute("aria-valuenow", "1851");
   await expect(diff.locator('[data-merge-row="1850"]')).toBeInViewport();
   await expect
@@ -77,10 +86,33 @@ try {
   await diff.screenshot({
     path: path.join(root, "artifacts/diff-minimap-text.png"),
   });
+  await visual.dblclick();
+  await expect(
+    diff.getByRole("dialog", { name: "全屏差分导航" }),
+  ).toBeVisible();
+  await diff
+    .getByRole("dialog")
+    .getByRole("slider", { name: "右侧差异位置" })
+    .press("End");
+  await expect(
+    diff.getByRole("dialog").getByRole("slider", { name: "右侧差异位置" }),
+  ).toHaveAttribute("aria-valuenow", "1851");
+  await diff.screenshot({
+    path: path.join(root, "artifacts/diff-navigation-fullscreen.png"),
+  });
+  await diff.keyboard.press("Escape");
+  await expect(diff.getByRole("dialog")).toHaveCount(0);
+  await expect(visual).toHaveAttribute("aria-valuenow", "1851");
   await diff.getByRole("button", { name: "使用左边", exact: true }).click();
-  await expect(diff.locator(".hunk-navigation>button")).toHaveCount(1);
+  await expect(diff.locator(".diff-map")).toHaveAttribute(
+    "data-difference-count",
+    "1",
+  );
   await diff.getByRole("button", { name: "使用左边", exact: true }).click();
-  await expect(diff.locator(".hunk-navigation>button")).toHaveCount(0);
+  await expect(diff.locator(".diff-map")).toHaveAttribute(
+    "data-difference-count",
+    "0",
+  );
   await diff
     .locator(".editor-sides>div")
     .nth(1)
@@ -122,11 +154,16 @@ try {
   await page.getByRole("button", { name: "打开独立差分窗口" }).click();
   const archives = await next;
   await archives
-    .locator(".nav-tree-row")
+    .locator(".overview-table tbody tr")
     .filter({ hasText: "app.war" })
     .dblclick();
   await expect(archives.locator(".document-tabs>div")).toHaveCount(2);
-  await archives.getByRole("button", { name: "打开差分", exact: true }).click();
+  await archives
+    .getByRole("button", { name: "打开文件夹", exact: true })
+    .click();
+  await archives.getByRole("button", { name: "进入归档", exact: true }).click();
+  await expect(archives.locator(".document-tabs>div")).toHaveCount(3);
+  await archives.getByRole("button", { name: "查看差分", exact: true }).click();
   await archives.locator(".merge-table").waitFor();
   await expect(archives.locator(".merge-table")).toContainText("before");
   await expect(archives.locator(".merge-table")).toContainText("after");
@@ -163,39 +200,41 @@ try {
   for (const dir of [archiveA, archiveB])
     await fs.writeFile(path.join(dir, "app.war"), packed);
   await page.getByRole("button", { name: "开始比较", exact: true }).click();
-  await expect(page.locator(".file-item")).toHaveCount(200);
+  await expect(
+    page.locator(".comparison-overview .overview-table tbody tr"),
+  ).toHaveCount(1);
+  await page.getByRole("button", { name: "进入归档", exact: true }).click();
+  await expect(page.locator(".overview-table tbody tr")).toHaveCount(200);
   await page
-    .getByRole("navigation", { name: "比较条目分页" })
+    .getByRole("navigation", { name: "差分一览分页" })
     .getByRole("button", { name: "最后一页" })
     .click();
-  await expect(page.locator(".file-item")).toHaveCount(1);
-  await expect(page.locator(".file-item")).toContainText("entry-00400.txt");
+  await expect(page.locator(".overview-table tbody tr")).toHaveCount(1);
+  await expect(page.locator(".overview-table")).toContainText(
+    "entry-00400.txt",
+  );
   await page
     .getByRole("textbox", { name: "搜索文件", exact: true })
     .fill("entry-00400");
-  await expect(page.locator(".file-item")).toHaveCount(1);
+  await expect(page.locator(".overview-table tbody tr")).toHaveCount(1);
   await page.getByRole("textbox", { name: "搜索文件", exact: true }).fill("");
   const another = app.waitForEvent("window");
   await page.getByRole("button", { name: "打开独立差分窗口" }).click();
   const large = await another;
   await expect(large.locator(".overview-table tbody tr")).toHaveCount(200);
   await large
-    .getByRole("navigation", { name: "归档一览分页" })
+    .getByRole("navigation", { name: "差分一览分页" })
     .getByRole("button", { name: "最后一页" })
     .click();
   await expect(large.locator(".overview-table tbody tr")).toHaveCount(1);
   await expect(large.locator(".overview-table")).toContainText(
     "entry-00400.txt",
   );
-  await large.locator(".nav-tree-row").filter({ hasText: "app.war" }).click();
-  await large.locator(".tree-load-more").click();
-  await large.locator(".tree-load-more").click();
-  await expect(
-    large.locator(".nav-tree-row").filter({ hasText: "entry-00400.txt" }),
-  ).toBeVisible();
-  await large.getByPlaceholder("搜索文件路径…").fill("entry-00400");
+  await large
+    .getByRole("textbox", { name: "搜索文件", exact: true })
+    .fill("entry-00400");
   await expect(large.locator(".overview-table tbody tr")).toHaveCount(1);
-  await large.getByRole("button", { name: "打开差分", exact: true }).click();
+  await large.getByRole("button", { name: "查看差分", exact: true }).click();
   await expect(large.locator(".merge-table")).toContainText("value-400");
   await large.getByRole("button", { name: "HTML 报告", exact: true }).click();
   await expect(large.getByRole("status")).toContainText("已导出");
@@ -236,9 +275,7 @@ try {
   await page.getByRole("button", { name: "查看差分", exact: true }).click();
   const excel = await xlWindow;
   await expect(excel.locator(".excel-diff tbody tr")).toHaveCount(2);
-  await excel
-    .getByRole("slider", { name: "右侧差异位置" })
-    .click({ position: { x: 10, y: 175 } });
+  await excel.getByRole("slider", { name: "右侧差异位置" }).press("End");
   await expect(
     excel.getByRole("slider", { name: "右侧差异位置" }),
   ).toHaveAttribute("aria-valuenow", "1851");
@@ -277,7 +314,13 @@ try {
   await page.getByRole("button", { name: "开始比较", exact: true }).click();
   await expect(
     page.locator(".comparison-overview .overview-table tbody tr"),
-  ).toHaveCount(3);
+  ).toHaveCount(1);
+  await page
+    .getByRole("textbox", { name: "搜索文件", exact: true })
+    .fill("config.txt");
+  await expect(
+    page.locator(".comparison-overview .overview-table tbody tr"),
+  ).toHaveCount(2);
   await expect(page.locator(".archive-warnings")).toBeVisible();
   const duplicateWindow = app.waitForEvent("window");
   await page
@@ -307,6 +350,74 @@ try {
   await duplicate.screenshot({
     path: path.join(root, "artifacts/duplicate-war.png"),
   });
+  const folderA = path.join(tmp, "folder-left"),
+    folderB = path.join(tmp, "folder-right");
+  for (const dir of [folderA, folderB]) {
+    await fs.mkdir(path.join(dir, "src", "nested"), { recursive: true });
+    await fs.mkdir(path.join(dir, "stable"));
+    await fs.writeFile(path.join(dir, "root.txt"), "same");
+  }
+  await fs.mkdir(path.join(folderB, "src", "new-empty"));
+  await fs.writeFile(
+    path.join(folderA, "src", "nested", "change.txt"),
+    "old-folder-file",
+  );
+  await fs.writeFile(
+    path.join(folderB, "src", "nested", "change.txt"),
+    "new-folder-file",
+  );
+  for (const [index, filename] of [folderA, folderB].entries()) {
+    await app.evaluate(({ dialog }, filename) => {
+      dialog.showOpenDialog = async () => ({
+        canceled: false,
+        filePaths: [filename],
+      });
+    }, filename);
+    await page
+      .getByRole("button", { name: "选择文件夹", exact: true })
+      .nth(index)
+      .click();
+  }
+  await page.getByRole("button", { name: "开始比较", exact: true }).click();
+  await expect(page.locator(".overview-table tbody tr")).toHaveCount(3);
+  await expect(page.locator(".file-sidebar")).toHaveCount(0);
+  await expect(
+    page.locator(".overview-table tbody tr").first(),
+  ).toHaveAttribute("data-object-type", "directory");
+  const sourceFolder = page
+    .locator(".overview-table tbody tr")
+    .filter({ hasText: "src" });
+  await expect(sourceFolder).toContainText("有差异");
+  await page.screenshot({
+    path: path.join(root, "artifacts/folder-overview.png"),
+  });
+  await page
+    .getByRole("combobox", { name: "筛选比较条目" })
+    .selectOption("added");
+  await expect(sourceFolder).toBeVisible();
+  await sourceFolder.dblclick();
+  await expect(page.locator(".overview-table")).toContainText("new-empty");
+  await page
+    .getByRole("combobox", { name: "筛选比较条目" })
+    .selectOption("all");
+  await page
+    .locator(".overview-table tbody tr")
+    .filter({ hasText: "nested" })
+    .dblclick();
+  await expect(page.locator(".overview-table tbody tr")).toHaveCount(1);
+  const folderFileWindow = app.waitForEvent("window");
+  await page.getByRole("button", { name: "查看差分", exact: true }).click();
+  const folderFile = await folderFileWindow;
+  await expect(folderFile.locator(".merge-table")).toContainText(
+    "old-folder-file",
+  );
+  await expect(folderFile.locator(".merge-table")).toContainText(
+    "new-folder-file",
+  );
+  await page.getByRole("button", { name: "上一级", exact: true }).click();
+  await expect(
+    page.locator('.folder-breadcrumbs [aria-current="page"]'),
+  ).toHaveText("src");
   console.log(
     "PASS: duplicate WAR/JAR versions, correct entry opening, complete export, overview, visual navigation, XLS and merge/save",
   );

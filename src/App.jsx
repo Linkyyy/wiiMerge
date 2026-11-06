@@ -44,7 +44,7 @@ import { diffChars } from "diff";
 import { DEFAULT_RULES } from "../core/defaults.mjs";
 
 import Titlebar from "./Titlebar.jsx";
-import Pagination, { usePagination } from "./Pagination.jsx";
+import FolderOverview from "./FolderOverview.jsx";
 import DiffMap from "./DiffMap.jsx";
 import ArchiveWarnings from "./ArchiveWarnings.jsx";
 import useDiffViewport from "./useDiffViewport.js";
@@ -61,7 +61,7 @@ const TYPE_LABELS = {
   text: "文本",
   excel: "Excel",
   binary: "二进制",
-  directory: "空文件夹",
+  directory: "文件夹",
 };
 const MODES = [
   { id: "files", label: "文件比较", icon: Files },
@@ -112,9 +112,8 @@ export default function App() {
   const [rulesOpen, setRulesOpen] = useState(false);
   const [report, setReport] = useState(null),
     [signature, setSignature] = useState("");
-  const [selectedKey, setSelectedKey] = useState(null),
-    [filter, setFilter] = useState("all"),
-    [search, setSearch] = useState("");
+  const [folderKey, setFolderKey] = useState(null),
+    [filter, setFilter] = useState("all");
   const [busy, setBusy] = useState(false),
     [exporting, setExporting] = useState(false),
     [progress, setProgress] = useState(null);
@@ -213,8 +212,7 @@ export default function App() {
       setReport(result);
       setSignature(currentSignature);
       setFilter("all");
-      setSearch("");
-      setSelectedKey(null);
+      setFolderKey(null);
       setEditText(false);
     } catch (e) {
       notifyError(e);
@@ -245,22 +243,6 @@ export default function App() {
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   }, [run]);
-  const visibleItems = useMemo(
-    () =>
-      (report?.items ?? []).filter(
-        (i) =>
-          (filter === "all" ||
-            (filter === "differences" && i.status !== "equal") ||
-            i.status === filter) &&
-          i.path.toLowerCase().includes(search.toLowerCase()),
-      ),
-    [report, filter, search],
-  );
-  const selected = visibleItems.find((i) => i.key === selectedKey);
-  const filePages = usePagination(
-    visibleItems,
-    JSON.stringify([report?.id, filter, search]),
-  );
   const swap = () => {
     if (mode === "text") setTexts((p) => ({ left: p.right, right: p.left }));
     else setPaths((p) => ({ left: p.right, right: p.left }));
@@ -551,7 +533,9 @@ export default function App() {
               <div>
                 <h2>
                   比较结果{" "}
-                  <span className="result-count">{report.summary.total}</span>
+                  <span className="result-count">
+                    {(report.objectSummary || report.summary).total}
+                  </span>
                 </h2>
                 <span className={`result-status ${stale ? "stale" : ""}`}>
                   {stale ? (
@@ -616,7 +600,7 @@ export default function App() {
                 { key: "added", icon: Plus },
                 { key: "removed", icon: Minus },
                 { key: "equal", icon: Check },
-                ...(report.summary.error
+                ...((report.objectSummary || report.summary).error
                   ? [{ key: "error", icon: CircleAlert }]
                   : []),
               ].map(({ key, icon: Icon }) => (
@@ -629,176 +613,33 @@ export default function App() {
                     <Icon size={16} />
                   </span>
                   <span>{LABELS[key]}</span>
-                  <b>{report.summary[key]}</b>
+                  <b>{(report.objectSummary || report.summary)[key]}</b>
                 </button>
               ))}
             </div>
-            <div className="result-workspace">
-              <aside className="file-sidebar">
-                <div className="sidebar-title">
-                  <span>比较条目</span>
-                  <select
-                    aria-label="筛选比较条目"
-                    value={filter}
-                    onChange={(e) => setFilter(e.target.value)}
-                  >
-                    <option value="all">全部状态</option>
-                    <option value="differences">只看不同</option>
-                    {Object.entries(LABELS).map(([value, label]) => (
-                      <option key={value} value={value}>
-                        {label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div className="file-search">
-                  <Search size={14} />
-                  <input
-                    aria-label="搜索文件"
-                    placeholder="搜索路径或文件名…"
-                    value={search}
-                    onChange={(e) => setSearch(e.target.value)}
-                  />
-                </div>
-                <div className="file-list">
-                  {visibleItems.length ? (
-                    filePages.rows.map((item) => (
-                      <button
-                        key={item.key}
-                        onClick={() => setSelectedKey(item.key)}
-                        onDoubleClick={() =>
-                          api.openDiff?.({
-                            reportId: report.id,
-                            itemKey: item.key,
-                          })
-                        }
-                        className={`file-item ${selected?.key === item.key ? "selected" : ""}`}
-                      >
-                        <span className={`file-type-icon ${item.type}`}>
-                          <FileIcon type={item.type} size={17} />
-                        </span>
-                        <span className="file-item-name" title={item.path}>
-                          <b>{basename(item.path)}</b>
-                          <small>
-                            {item.path.includes("/")
-                              ? item.path.slice(0, item.path.lastIndexOf("/"))
-                              : TYPE_LABELS[item.type]}
-                          </small>
-                        </span>
-                        <StatusDot status={item.status} />
-                      </button>
-                    ))
-                  ) : (
-                    <div className="no-files">
-                      {report.summary.total
-                        ? "没有符合条件的条目"
-                        : "没有可比较文件。请检查排除规则。"}
-                    </div>
-                  )}
-                </div>
-                <Pagination paging={filePages} label="比较条目分页" />
-                <div className="sidebar-footer">
-                  匹配 {visibleItems.length} / {report.summary.total} 项
-                  <span>排除 {report.summary.excluded} 项</span>
-                </div>
-              </aside>
-              <div className="detail-panel">
-                {selected ? (
-                  <div className="result-preview">
-                    <FileIcon type={selected.type} size={34} />
-                    <h3>{selected.path}</h3>
-                    <span className={`status-pill ${selected.status}`}>
-                      {LABELS[selected.status]}
-                    </span>
-                    <p>在独立差分窗口中查看文件、导航、归档 Tab 与合并操作。</p>
-                    <button
-                      className="text-button"
-                      onClick={() => setSelectedKey(null)}
-                    >
-                      返回差分一览
-                    </button>
+            <div className="result-workspace overview-workspace">
+              <div className="comparison-overview archive-overview">
+                <FolderOverview
+                  key={report.id}
+                  report={report}
+                  folderKey={folderKey}
+                  onNavigate={setFolderKey}
+                  filter={filter}
+                  onFilter={setFilter}
+                  onOpenFile={(item) =>
+                    api.openDiff?.({ reportId: report.id, itemKey: item.key })
+                  }
+                  extra={
                     <button
                       className="button primary"
                       onClick={() =>
-                        api.openDiff?.({
-                          reportId: report.id,
-                          itemKey: selected.key,
-                        })
+                        api.openDiff?.({ reportId: report.id, folderKey })
                       }
                     >
                       打开独立差分窗口
                     </button>
-                    <button
-                      className="text-button"
-                      onClick={() => api.openDiff?.({ reportId: report.id })}
-                    >
-                      浏览完整目录与归档
-                    </button>
-                  </div>
-                ) : (
-                  <div className="comparison-overview archive-overview">
-                    <div className="overview-heading">
-                      <div>
-                        <h2>差分一览</h2>
-                        <p>先查看全部比较结果，双击文件进入独立差分窗口。</p>
-                      </div>
-                      <button
-                        className="button primary"
-                        onClick={() => api.openDiff?.({ reportId: report.id })}
-                      >
-                        打开独立差分窗口
-                      </button>
-                    </div>
-                    <Pagination paging={filePages} label="差分一览分页" />
-                    <table className="overview-table">
-                      <thead>
-                        <tr>
-                          <th>文件 / 路径</th>
-                          <th>类型</th>
-                          <th>状态</th>
-                          <th>操作</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {filePages.rows.map((item) => (
-                          <tr
-                            key={item.key}
-                            onDoubleClick={() =>
-                              api.openDiff?.({
-                                reportId: report.id,
-                                itemKey: item.key,
-                              })
-                            }
-                          >
-                            <td>{item.path}</td>
-                            <td>{TYPE_LABELS[item.type] || item.type}</td>
-                            <td>
-                              <span className={`status-pill ${item.status}`}>
-                                {LABELS[item.status]}
-                              </span>
-                            </td>
-                            <td>
-                              <button
-                                className="text-button"
-                                onClick={() =>
-                                  api.openDiff?.({
-                                    reportId: report.id,
-                                    itemKey: item.key,
-                                  })
-                                }
-                              >
-                                查看差分
-                              </button>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                    {!visibleItems.length && (
-                      <div className="detail-empty">没有符合条件的条目</div>
-                    )}
-                  </div>
-                )}
+                  }
+                />
               </div>
             </div>
           </section>
@@ -1120,26 +961,29 @@ export function Detail({ item }) {
               onJump={selectRow}
               viewport={viewport}
             />
-            {rows.slice(0, limit).map((c, i) => (
-              <button
-                key={i}
-                className={cursor === i ? "active" : ""}
-                onClick={() => selectRow(i)}
-              >
-                <strong>
-                  {c.sheet} · {c.column}
-                  {c.leftRow || c.rightRow}
-                </strong>
-                <small>
-                  {c.left} → {c.right}
-                </small>
-              </button>
-            ))}
-            {rows.length > limit && (
-              <button onClick={() => setLimit((n) => n + 500)}>
-                继续显示差分
-              </button>
-            )}
+            <details className="text-navigation">
+              <summary>文本导航</summary>
+              {rows.slice(0, limit).map((c, i) => (
+                <button
+                  key={i}
+                  className={cursor === i ? "active" : ""}
+                  onClick={() => selectRow(i)}
+                >
+                  <strong>
+                    {c.sheet} · {c.column}
+                    {c.leftRow || c.rightRow}
+                  </strong>
+                  <small>
+                    {c.left} → {c.right}
+                  </small>
+                </button>
+              ))}
+              {rows.length > limit && (
+                <button onClick={() => setLimit((n) => n + 500)}>
+                  继续显示差分
+                </button>
+              )}
+            </details>
           </aside>
         )}
         <div className="diff-scroll" ref={scroll}>
