@@ -48,6 +48,7 @@ async function post(route, value) {
   if (!r.ok) throw new Error(d.error);
   return d;
 }
+const windowActions = [];
 try {
   child = spawn(
     process.execPath,
@@ -81,7 +82,11 @@ try {
   context = await browser.newContext();
   await context.exposeFunction("nativeTestRPC", async (req) => {
     const a = req.args;
-    if (req.method === "windowAction" || req.method === "setDirty") return true;
+    if (req.method === "windowAction") {
+      windowActions.push(a.action);
+      return true;
+    }
+    if (req.method === "setDirty") return true;
     if (req.method === "choosePath")
       return (await post("/native/authorize", { path: selected.shift() })).path;
     if (req.method === "droppedPaths") {
@@ -142,6 +147,33 @@ try {
   const page = await context.newPage();
   await page.goto(ready.launchURL);
   await page.locator(".mode-tabs").waitFor();
+  const titlebar = await page.locator(".titlebar").boundingBox(),
+    x = titlebar.x + titlebar.width / 2,
+    y = titlebar.y + 20;
+  await page.mouse.click(x, y);
+  await expect
+    .poll(() => windowActions.filter((action) => action === "drag").length)
+    .toBe(0);
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  await page.mouse.move(x + 2, y + 2);
+  await expect
+    .poll(() => windowActions.filter((action) => action === "drag").length)
+    .toBe(0);
+  await page.mouse.move(x + 25, y + 15);
+  await expect
+    .poll(() => windowActions.filter((action) => action === "drag").length)
+    .toBe(1);
+  await page.mouse.move(x + 40, y + 25);
+  await page.mouse.up();
+  await expect
+    .poll(() => windowActions.filter((action) => action === "drag").length)
+    .toBe(1);
+
+  if (windowActions.includes("maximize"))
+    throw new Error(
+      "A drag gesture must not become a titlebar double-click maximize",
+    );
   selected = [left, right];
   await page.evaluate(() => {
     const transfer = new DataTransfer();

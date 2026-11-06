@@ -43,9 +43,12 @@ namespace WiiMerge {
     readonly List<MainWindow> children = new List<MainWindow>();
     CoreWebView2Environment browserEnvironment;
     string launchUrl, detailQuery = "", reportId;
-    bool dirty, discardClosing, shadowEnabled, recordingMoves;
+    bool dirty, discardClosing, shadowEnabled, recordingMoves, nativeMoveActive, maximizingWindow;
     int testDragRequests;
     readonly List<Point> testMoves = new List<Point>();
+    readonly List<Size> testSizes = new List<Size>();
+    Point testNativeMoveStart;
+    bool testNativeMoveStarted;
     [StructLayout(LayoutKind.Sequential)] struct MouseInput { public int X, Y; public uint Data, Flags, Time; public IntPtr Extra; }
     [StructLayout(LayoutKind.Sequential)] struct NativeInput { public uint Type; public MouseInput Mouse; }
     [DllImport("user32.dll", SetLastError = true)] static extern uint SendInput(uint count, NativeInput[] input, int size);
@@ -70,7 +73,7 @@ namespace WiiMerge {
         await Task.Delay(150);
         var before = Bounds;
         int startX = Left + Width / 2, startY = Top + 20, requests = testDragRequests;
-        testMoves.Clear(); recordingMoves = true;
+        testMoves.Clear(); testSizes.Clear(); testNativeMoveStarted = false; recordingMoves = true;
         await Task.Run(async () => {
           SetCursorPos(startX, startY);
           MouseButton(2);
@@ -89,11 +92,33 @@ namespace WiiMerge {
           after = new { x = after.X, y = after.Y, width = after.Width, height = after.Height },
           settled = new { x = settled.X, y = settled.Y, width = settled.Width, height = settled.Height },
           dragRequests = testDragRequests - requests,
+          started = testNativeMoveStarted,
+          nativeStart = new { x = testNativeMoveStart.X, y = testNativeMoveStart.Y },
+          mouseEnd = new { x = Cursor.Position.X, y = Cursor.Position.Y },
+          resizes = testSizes.Count,
           moves = testMoves.Select(point => new { x = point.X, y = point.Y }).ToArray()
         };
       } finally { recordingMoves = false; Bounds = original; }
     }
     [DllImport("user32.dll")] static extern bool ReleaseCapture();
+    [DllImport("user32.dll")] static extern short GetAsyncKeyState(int key);
+    [DllImport("user32.dll")] static extern uint GetDpiForWindow(IntPtr window);
+    static IntPtr ScreenPointParameter(Point point) {
+      return new IntPtr(unchecked((int)((uint)(ushort)point.X | ((uint)(ushort)point.Y << 16))));
+    }
+    void BeginMoveResize(int hit) {
+      // Renderer events are asynchronous: a delayed press must not start a move
+      // after the real mouse button has already been released.
+      if (nativeMoveActive || (GetAsyncKeyState(SystemInformation.MouseButtonsSwapped ? 2 : 1) & 0x8000) == 0) return;
+      nativeMoveActive = true;
+      try {
+        var cursor = Cursor.Position;
+        if (recordingMoves) { testNativeMoveStart = cursor; testNativeMoveStarted = true; }
+        var position = ScreenPointParameter(cursor);
+        ReleaseCapture();
+        SendMessage(Handle, 0xA1, new IntPtr(hit), position);
+      } finally { nativeMoveActive = false; }
+    }
     [DllImport("user32.dll")] static extern IntPtr SendMessage(IntPtr h, int m, IntPtr w, IntPtr l);
     [StructLayout(LayoutKind.Sequential)] struct NativePoint { public int X, Y; }
     [StructLayout(LayoutKind.Sequential)] struct NativeRect { public int Left, Top, Right, Bottom; }
@@ -112,15 +137,26 @@ namespace WiiMerge {
       var area = MaximizeArea(Rectangle.FromLTRB(monitor.Monitor.Left, monitor.Monitor.Top, monitor.Monitor.Right, monitor.Monitor.Bottom),
         Rectangle.FromLTRB(monitor.Work.Left, monitor.Work.Top, monitor.Work.Right, monitor.Work.Bottom));
       var limits = (MinMaxInfo)Marshal.PtrToStructure(pointer, typeof(MinMaxInfo));
-      limits.MaxPosition = new NativePoint { X = area.X, Y = area.Y };
-      limits.MaxSize = new NativePoint { X = area.Width, Y = area.Height };
-      limits.MaxTrackSize = limits.MaxSize;
-      limits.MinTrackSize.X = Math.Min(limits.MinTrackSize.X, area.Width);
-      limits.MinTrackSize.Y = Math.Min(limits.MinTrackSize.Y, area.Height);
+      limits = MonitorLimits(limits, area, maximizingWindow || WindowState == FormWindowState.Maximized);
       Marshal.StructureToPtr(limits, pointer, false);
     }
+    static MinMaxInfo MonitorLimits(MinMaxInfo limits, Rectangle area, bool maximizing) {
+      limits.MaxPosition = new NativePoint { X = area.X, Y = area.Y };
+      limits.MaxSize = new NativePoint { X = area.Width, Y = area.Height };
+      // Normal move/resize limits belong to Windows' virtual desktop. Replacing
+      // them with the nearest monitor can resize the window as its monitor flips.
+      if (maximizing) {
+        limits.MinTrackSize.X = Math.Min(limits.MinTrackSize.X, area.Width);
+        limits.MinTrackSize.Y = Math.Min(limits.MinTrackSize.Y, area.Height);
+      }
+      return limits;
+    }
     void ToggleMaximize() {
-      if (WindowState != FormWindowState.Maximized) { WindowState = FormWindowState.Maximized; SendWindowState(); return; }
+      if (WindowState != FormWindowState.Maximized) {
+        maximizingWindow = true;
+        try { WindowState = FormWindowState.Maximized; } finally { maximizingWindow = false; }
+        SendWindowState(); return;
+      }
       WindowState = FormWindowState.Normal;
       // A monitor may have been disconnected while maximized. Keep the titlebar reachable.
       if (!Screen.AllScreens.Any(screen => Rectangle.Intersect(new Rectangle(Bounds.X, Bounds.Y, Bounds.Width, 40), screen.WorkingArea).Width >= 100)) {
@@ -156,12 +192,30 @@ namespace WiiMerge {
     }
     protected override void OnSizeChanged(EventArgs e) {
       base.OnSizeChanged(e);
+      if (recordingMoves && testSizes != null) testSizes.Add(Size);
       // ShowWindow can resize synchronously before WinForms commits WindowState.
       if (view != null && IsHandleCreated && !IsDisposed) BeginInvoke(new Action(SendWindowState));
     }
 
+    protected override void OnLoad(EventArgs e) {
+      // Initial placement is a one-time operation. Keep the first window inside
+      // one monitor instead of relying on changing move/resize track limits.
+      var work = Screen.FromHandle(Handle).WorkingArea;
+      uint dpi;
+      try { dpi = GetDpiForWindow(Handle); } catch (EntryPointNotFoundException) { dpi = (uint)DeviceDpi; }
+      double scale = Math.Max(1, dpi / 96.0);
+      MinimumSize = new Size(Math.Min(work.Width, (int)Math.Round(1050 * scale)), Math.Min(work.Height, (int)Math.Round(720 * scale)));
+      Size = new Size(Math.Min(work.Width, (int)Math.Round(1440 * scale)), Math.Min(work.Height, (int)Math.Round(940 * scale)));
+      StartPosition = FormStartPosition.Manual;
+      Location = new Point(work.Left + (work.Width - Width) / 2, work.Top + (work.Height - Height) / 2);
+      base.OnLoad(e);
+    }
+
     public MainWindow(string[] args) {
       Text = "wiiMerge";
+      // The host contains only WebView2, which handles its own DPI scaling.
+      // Do not also let WinForms rescale this frameless outer window by its font.
+      AutoScaleMode = AutoScaleMode.None;
       FormBorderStyle = FormBorderStyle.None; Padding = Padding.Empty; BackColor = Color.White;
       Width = 1440; Height = 940; MinimumSize = new Size(1050, 720);
       StartPosition = FormStartPosition.CenterScreen;
@@ -310,12 +364,12 @@ namespace WiiMerge {
               case "minimize": WindowState = FormWindowState.Minimized; break;
               case "maximize": ToggleMaximize(); break;
               case "close": BeginInvoke(new Action(Close)); break;
-              case "drag": testDragRequests++; ReleaseCapture(); SendMessage(Handle, 0xA1, new IntPtr(2), IntPtr.Zero); break;
+              case "drag": testDragRequests++; BeginMoveResize(2); break;
               case "resize-n": case "resize-s": case "resize-e": case "resize-w":
               case "resize-ne": case "resize-nw": case "resize-se": case "resize-sw":
                 if (WindowState == FormWindowState.Normal) {
                   var hits = new Dictionary<string,int> { {"resize-w",10},{"resize-e",11},{"resize-n",12},{"resize-nw",13},{"resize-ne",14},{"resize-s",15},{"resize-sw",16},{"resize-se",17} };
-                  ReleaseCapture(); SendMessage(Handle, 0xA1, new IntPtr(hits[(string)args["action"]]), IntPtr.Zero);
+                  BeginMoveResize(hits[(string)args["action"]]);
                 } break;
               default: throw new Exception("无效的窗口操作。");
             } result = true; break;
@@ -395,6 +449,30 @@ namespace WiiMerge {
             var docForDrop = serializer.Deserialize<Dictionary<string, object>>(await view.CoreWebView2.CallDevToolsProtocolMethodAsync("DOM.getDocument", "{}"));
             var inputForDrop = serializer.Deserialize<Dictionary<string, object>>(await view.CoreWebView2.CallDevToolsProtocolMethodAsync("DOM.querySelector", serializer.Serialize(new { nodeId = ((Dictionary<string, object>)docForDrop["root"])["nodeId"], selector = "#native-host-file-test" })));
             await view.CoreWebView2.CallDevToolsProtocolMethodAsync("DOM.setFileInputFiles", serializer.Serialize(new { nodeId = inputForDrop["nodeId"], files = new[] { Fixture("dropLeft"), Fixture("dropRight") } })); result = true; break;
+          case "test:windowIdle": {
+            if (fixtureFile == null && sharedOwner?.fixtureFile == null) throw new Exception("测试接口未启用。");
+            var idleBefore = Bounds;
+            testMoves.Clear(); testSizes.Clear(); recordingMoves = true;
+            try {
+              // These delayed renderer actions carry no physical button press.
+              BeginMoveResize(2); BeginMoveResize(17);
+              await Task.Delay(2000);
+              var normal = MonitorLimits(new MinMaxInfo {
+                MinTrackSize = new NativePoint { X = 1400, Y = 900 },
+                MaxTrackSize = new NativePoint { X = 4000, Y = 2200 }
+              }, new Rectangle(0, 0, 1100, 700), false);
+              var maximum = MonitorLimits(normal, new Rectangle(40, 0, 1100, 700), true);
+              result = new {
+                stable = Bounds == idleBefore && testMoves.Count == 0 && testSizes.Count == 0,
+                normal = new { minWidth = normal.MinTrackSize.X, minHeight = normal.MinTrackSize.Y, maxWidth = normal.MaxTrackSize.X, maxHeight = normal.MaxTrackSize.Y },
+                maximum = new { minWidth = maximum.MinTrackSize.X, minHeight = maximum.MinTrackSize.Y, maxWidth = maximum.MaxTrackSize.X, maxHeight = maximum.MaxTrackSize.Y },
+                points = new[] { new Point(200, 300), new Point(-1900, 80), new Point(100, -1280), new Point(-1920, -1080) }.Select(point => {
+                  long packed = ScreenPointParameter(point).ToInt64(); return new { x = (short)(packed & 0xffff), y = (short)((packed >> 16) & 0xffff) };
+                }).ToArray()
+              };
+            } finally { recordingMoves = false; }
+            break;
+          }
           case "test:windowDrag":
             result = await TestWindowDrag(); break;
           case "test:windowGeometry":
@@ -424,11 +502,19 @@ namespace WiiMerge {
     protected override void WndProc(ref System.Windows.Forms.Message m) {
       // Keep the resize/snap styles for DWM shadows without a non-client border.
       if (m.Msg == 0x83 && m.WParam != IntPtr.Zero) { m.Result = IntPtr.Zero; return; }
+      if (m.Msg == 0x112 && ((long)m.WParam & 0xfff0) == 0xf030) {
+        maximizingWindow = true;
+        try { base.WndProc(ref m); } finally { maximizingWindow = false; }
+        return;
+      }
       base.WndProc(ref m);
       if (m.Msg == 0x24 && m.LParam != IntPtr.Zero) ApplyMonitorBounds(m.LParam);
       if (m.Msg == 0x31e) ConfigureShadow();
       if (m.Msg == 0x84 && WindowState == FormWindowState.Normal) {
-        var p = PointToClient(Cursor.Position); bool l = p.X < 6, r = p.X >= ClientSize.Width - 6, t = p.Y < 6, b = p.Y >= ClientSize.Height - 6;
+        long coordinates = m.LParam.ToInt64();
+        var p = PointToClient(new Point((short)(coordinates & 0xffff), (short)((coordinates >> 16) & 0xffff)));
+        if (!ClientRectangle.Contains(p)) return;
+        bool l = p.X < 6, r = p.X >= ClientSize.Width - 6, t = p.Y < 6, b = p.Y >= ClientSize.Height - 6;
         if (l || r || t || b) m.Result = new IntPtr(t ? (l ? 13 : r ? 14 : 12) : b ? (l ? 16 : r ? 17 : 15) : l ? 10 : 11);
       }
     }

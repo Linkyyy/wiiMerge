@@ -108,12 +108,52 @@
       "XLS overview missing",
     );
     await child();
+    const idle = await control("test:windowIdle");
+    const normalLimits = {
+      minWidth: 1400,
+      minHeight: 900,
+      maxWidth: 4000,
+      maxHeight: 2200,
+    };
+    const maxLimits = {
+      minWidth: 1100,
+      minHeight: 700,
+      maxWidth: 4000,
+      maxHeight: 2200,
+    };
+    if (
+      !idle.stable ||
+      !Object.entries(normalLimits).every(
+        ([key, value]) => idle.normal[key] === value,
+      ) ||
+      !Object.entries(maxLimits).every(
+        ([key, value]) => idle.maximum[key] === value,
+      ) ||
+      ![
+        { x: 200, y: 300 },
+        { x: -1900, y: 80 },
+        { x: 100, y: -1280 },
+        { x: -1920, y: -1080 },
+      ].every(
+        (point, index) =>
+          point.x === idle.points[index].x && point.y === idle.points[index].y,
+      )
+    )
+      throw new Error(
+        "Window idle/monitor limits regression: " + JSON.stringify(idle),
+      );
     const drag = await control("test:windowDrag");
     console.log("Native drag probe", JSON.stringify(drag));
     const { before, after, settled } = drag;
+    const expectedX = drag.mouseEnd.x - drag.nativeStart.x,
+      expectedY = drag.mouseEnd.y - drag.nativeStart.y;
     if (
-      Math.abs(after.x - before.x - 48) > 2 ||
-      Math.abs(after.y - before.y - 32) > 2 ||
+      !drag.started ||
+      expectedX <= 0 ||
+      expectedY <= 0 ||
+      drag.resizes !== 0 ||
+      Math.abs(after.x - before.x - expectedX) > 2 ||
+      Math.abs(after.y - before.y - expectedY) > 2 ||
       after.width !== before.width ||
       after.height !== before.height ||
       settled.x !== after.x ||
@@ -175,7 +215,9 @@
     );
     if (document.querySelectorAll(".window-resize-handles>div").length !== 8)
       throw new Error("Borderless resize handles missing");
-    completed.push("integrated window controls");
+    completed.push(
+      "stable idle window, physical drag, signed screen coordinates and integrated window controls",
+    );
     await control("test:capture");
     await control("test:finished", { completed });
   } catch (error) {

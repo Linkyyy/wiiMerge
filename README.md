@@ -6,13 +6,13 @@ Windows 优先的本地桌面差异比较工具，使用 React 界面和共享 N
 
 Windows 10 / 11 x64：在 [GitHub Actions 构建页面](https://github.com/Linkyyy/wiiMerge/actions/workflows/ci.yml) 打开成功的构建记录，从 **Artifacts → wiiMerge-WebView2-Windows-x64** 下载精简版 ZIP（需要登录 GitHub）。**解压整个 ZIP 后运行 `wiiMerge.exe`**，请勿只复制启动器。无需另装 Node.js 或 Office。这是未签名的开发版便携程序。
 
-[0.6.0 下载页面](https://github.com/Linkyyy/wiiMerge/actions/runs/42190270575#artifacts)
+[0.6.1 构建与下载](https://github.com/Linkyyy/wiiMerge/actions/workflows/ci.yml)
 
 精简版依赖系统的 **Microsoft Edge WebView2 Runtime 和 .NET Framework 4.8**，Windows 11 通常自带；缺少 WebView2 时程序会提示微软官方安装地址。它仍然自带比较引擎，正常比较不需要联网。旧版 Electron 的规则配置继续可用。
 
-如果电脑不能安装系统组件，可下载 **wiiMerge-Windows-x64** 兼容版，解压后运行 `wiiMerge-0.6.0-Windows-x64.exe`。兼容版自带浏览器运行时，体积较大。Actions 下载有保留期限，过期后可在上述页面重新运行构建。
+如果电脑不能安装系统组件，可下载 **wiiMerge-Windows-x64** 兼容版，解压后运行 `wiiMerge-0.6.1-Windows-x64.exe`。兼容版自带浏览器运行时，体积较大。Actions 下载有保留期限，过期后可在上述页面重新运行构建。
 
-### 0.6.0 体积
+### 0.6.1 体积
 
 | 本地构建实测     | 原 0.1.0  | WebView2 精简版 | 减少  |
 | ---------------- | --------- | --------------- | ----- |
@@ -29,7 +29,7 @@ WebView2 浏览器由系统共享，上表不包括已有系统组件的磁盘�
 
 差分工作区的顶部只保留两行：第一行包含工作区菜单、差分一览、已打开文件 Tab 和嵌入式窗口控制；第二行是图标工具栏。常用导航、合并、保存与编辑操作通过图标和悬浮提示访问；另存为、文字导航、比较规则与路径信息、归档提示和快捷键说明收进菜单或右键菜单。文本表格中可右键采用当前差分块，标签可右键关闭；长提示不再常驻页脚。
 
-窗口使用外部阴影代替实体边框，保留嵌入式最小化、最大化和关闭按钮。拖动顶部空白处移动，双击顶部空白处切换最大化，也可拖动窗口边缘缩放。WebView2 最大化按当前显示器工作区计算，适配副屏的正 / 负坐标和任务栏位置；保留 PerMonitorV2 DPI 感知。
+窗口使用外部阴影代替实体边框，保留嵌入式最小化、最大化和关闭按钮。拖动顶部空白处移动，双击顶部空白处切换最大化，也可拖动窗口边缘缩放。WebView2 最大化按当前显示器工作区计算，适配副屏的正 / 负坐标和任务栏位置；保留 PerMonitorV2 DPI 感知。浏览器宿主关闭 WinForms 的重复字体自动缩放；普通窗口保留系统的跨屏尺寸约束，仅最大化使用当前屏幕工作区。标题栏移动达到阈值才启动拖动，并拒绝鼠标松开后的延迟拖动 / 缩放请求。
 
 ### 合并与快捷键
 
@@ -111,7 +111,7 @@ Linux 无图形显示器的云容器可使用以下测试方式。`--no-sandbox`
 WIIMERGE_SMOKE_HEADLESS=1 WIIMERGE_TEST_APP_PATH=.desktop-build npm run test:desktop
 ```
 
-WebView2 启动器可在 Linux 交叉编译。`npm run dist:lite` 使用固定版本的官方 Windows Node.js ZIP，并验证固定 SHA-256；WebView2 SDK 与 .NET 引用程序集由 NuGet 锁文件固定。产物在 `release/wiiMerge-0.6.0-WebView2-Windows-x64.zip`，解压文件也保留在 `.native-build/`。代理环境需在命令前设置 `NODE_USE_ENV_PROXY=1`。`WIIMERGE_DOTNET` 可指定 `dotnet` 的绝对路径。
+WebView2 启动器可在 Linux 交叉编译。`npm run dist:lite` 使用固定版本的官方 Windows Node.js ZIP，并验证固定 SHA-256；WebView2 SDK 与 .NET 引用程序集由 NuGet 锁文件固定。产物在 `release/wiiMerge-0.6.1-WebView2-Windows-x64.zip`，解压文件也保留在 `.native-build/`。代理环境需在命令前设置 `NODE_USE_ENV_PROXY=1`。`WIIMERGE_DOTNET` 可指定 `dotnet` 的绝对路径。
 
 Linux 上单独检查精简版界面与后台：先执行 `npm run build && node scripts/build-native.mjs --prepare-only`，再执行 `npm run test:native`；可用 `PLAYWRIGHT_CHROMIUM_EXECUTABLE` 指定 Chrome / Chromium。这项检查模拟原生对话框，Windows CI 则启动编译后的 WinForms + WebView2 程序，测试真实宿主消息、文件授权、拖放和导出。
 

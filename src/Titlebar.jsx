@@ -1,11 +1,13 @@
-import React from "react";
+import React, { useRef } from "react";
 import { ArrowLeftRight, Minus, Square, X } from "lucide-react";
 export default function Titlebar({
   title = "wiiMerge",
   children,
   compact = false,
 }) {
-  const api = window.wiiMerge;
+  const api = window.wiiMerge,
+    drag = useRef(null),
+    dragged = useRef(false);
   return (
     <>
       {api?.runtime === "webview2" && (
@@ -26,17 +28,45 @@ export default function Titlebar({
       )}
       <header
         className={`titlebar ${compact ? "compact-titlebar" : ""}`}
-        onMouseDown={(e) => {
+        onPointerDown={(e) => {
           if (
-            e.button === 0 &&
-            !e.target.closest(
+            api?.runtime !== "webview2" ||
+            e.button !== 0 ||
+            e.target.closest(
               "button,input,select,textarea,a,[role=tablist],[data-no-drag]",
             )
           )
-            api?.windowAction?.("drag");
+            return;
+          dragged.current = false;
+          drag.current = { x: e.clientX, y: e.clientY };
+          e.currentTarget.setPointerCapture(e.pointerId);
+        }}
+        onPointerMove={(e) => {
+          const origin = drag.current;
+          if (!origin) return;
+          if (!(e.buttons & 1)) {
+            drag.current = null;
+            return;
+          }
+          if (Math.hypot(e.clientX - origin.x, e.clientY - origin.y) < 5)
+            return;
+          drag.current = null;
+          dragged.current = true;
+          if (e.currentTarget.hasPointerCapture(e.pointerId))
+            e.currentTarget.releasePointerCapture(e.pointerId);
+          api.windowAction("drag");
+        }}
+        onPointerUp={(e) => {
+          drag.current = null;
+          if (e.currentTarget.hasPointerCapture(e.pointerId))
+            e.currentTarget.releasePointerCapture(e.pointerId);
+        }}
+        onPointerCancel={() => {
+          drag.current = null;
         }}
         onDoubleClick={(e) => {
-          if (!e.target.closest("button")) api?.windowAction?.("maximize");
+          if (!e.target.closest("button") && !dragged.current)
+            api?.windowAction?.("maximize");
         }}
       >
         {!compact && (
