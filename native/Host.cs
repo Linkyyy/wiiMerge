@@ -71,7 +71,7 @@ namespace WiiMerge {
       Marshal.StructureToPtr(limits, pointer, false);
     }
     void ToggleMaximize() {
-      if (WindowState != FormWindowState.Maximized) { WindowState = FormWindowState.Maximized; return; }
+      if (WindowState != FormWindowState.Maximized) { WindowState = FormWindowState.Maximized; SendWindowState(); return; }
       WindowState = FormWindowState.Normal;
       // A monitor may have been disconnected while maximized. Keep the titlebar reachable.
       if (!Screen.AllScreens.Any(screen => Rectangle.Intersect(new Rectangle(Bounds.X, Bounds.Y, Bounds.Width, 40), screen.WorkingArea).Width >= 100)) {
@@ -79,6 +79,7 @@ namespace WiiMerge {
         Size = new Size(Math.Min(Width, work.Width), Math.Min(Height, work.Height));
         Location = new Point(work.Left + (work.Width - Width) / 2, work.Top + (work.Height - Height) / 2);
       }
+      SendWindowState();
     }
     [StructLayout(LayoutKind.Sequential)] struct Margins { public int Left, Right, Top, Bottom; }
     [DllImport("dwmapi.dll")] static extern int DwmIsCompositionEnabled(out bool enabled);
@@ -104,7 +105,11 @@ namespace WiiMerge {
       if (!view.IsDisposed && view.CoreWebView2 != null)
         view.CoreWebView2.PostWebMessageAsJson(serializer.Serialize(new { type = "window-state", maximized = WindowState == FormWindowState.Maximized }));
     }
-    protected override void OnSizeChanged(EventArgs e) { base.OnSizeChanged(e); if (view != null) SendWindowState(); }
+    protected override void OnSizeChanged(EventArgs e) {
+      base.OnSizeChanged(e);
+      // ShowWindow can resize synchronously before WinForms commits WindowState.
+      if (view != null && IsHandleCreated && !IsDisposed) BeginInvoke(new Action(SendWindowState));
+    }
 
     public MainWindow(string[] args) {
       Text = "wiiMerge";
@@ -344,7 +349,7 @@ namespace WiiMerge {
           case "test:windowGeometry":
             if (fixtureFile == null && sharedOwner?.fixtureFile == null) throw new Exception("测试接口未启用。");
             var screen = Screen.FromHandle(Handle);
-            result = new { bounds = new { x = Left, y = Top, width = Width, height = Height }, work = new { x = screen.WorkingArea.X, y = screen.WorkingArea.Y, width = screen.WorkingArea.Width, height = screen.WorkingArea.Height },
+            result = new { state = WindowState.ToString(), bounds = new { x = Left, y = Top, width = Width, height = Height }, work = new { x = screen.WorkingArea.X, y = screen.WorkingArea.Y, width = screen.WorkingArea.Width, height = screen.WorkingArea.Height },
               cases = new[] {
                 MaximizeArea(new Rectangle(1920, 0, 2560, 1440), new Rectangle(1920, 0, 2560, 1400)),
                 MaximizeArea(new Rectangle(-1920, 0, 1920, 1080), new Rectangle(-1880, 0, 1880, 1080)),

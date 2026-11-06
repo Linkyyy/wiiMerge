@@ -112,7 +112,13 @@
     await wait(
       () => document.documentElement.classList.contains("window-maximized"),
       "Maximized state missing",
-    );
+    ).catch(async (error) => {
+      throw new Error(
+        error.message +
+          ": " +
+          JSON.stringify(await control("test:windowGeometry")),
+      );
+    });
     const geometry = await control("test:windowGeometry");
     const { bounds, work } = geometry;
     if (
