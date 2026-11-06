@@ -79,6 +79,10 @@ ZIP / WAR / JAR 允许同一条路径在归档中出现多次，例如 `WEB-INF/
 - Excel 主键：填写 `A` 或 `A,B`。第 1 行固定为表头，后续非空行按规范化后的列值组合匹配；空主键、重复主键报错。工作表按名称匹配。
 - 规则保存在 Electron `userData/rules.json`，支持 JSON 导入、导出和恢复默认，不保存文件内容或输入文本。
 
+## 官网
+
+中文官网源码位于 `website/`，包含功能介绍、真实界面预览、合并演示、下载指引和 FAQ。运行 `npm run build:site` 构建静态网站，`npm run preview:site` 预览；`vercel.json` 已准备好从仓库根目录部署。发布配置与浏览器验证见 [官网说明](docs/website.md)。
+
 ## 开发
 
 推荐 Node.js 24 LTS、npm 11；最低 Node.js 22.12。编译 WebView2 启动器还需要 .NET SDK 10；终端用户不需要安装该 SDK。使用现有检出目录，每个云任务已隔离，无需额外创建 Git worktree。

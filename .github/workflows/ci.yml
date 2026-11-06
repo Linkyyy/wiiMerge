@@ -1,7 +1,21 @@
 name: Desktop validation
 on:
   push:
+    paths-ignore:
+      - "website/**"
+      - "scripts/build-site.mjs"
+      - "scripts/smoke-site.mjs"
+      - "vercel.json"
+      - "docs/website.md"
+      - ".github/workflows/site.yml"
   pull_request:
+    paths-ignore:
+      - "website/**"
+      - "scripts/build-site.mjs"
+      - "scripts/smoke-site.mjs"
+      - "vercel.json"
+      - "docs/website.md"
+      - ".github/workflows/site.yml"
   workflow_dispatch:
 jobs:
   test:

@@ -1,0 +1,45 @@
+name: Website validation
+on:
+  push:
+    paths:
+      - "website/**"
+      - "scripts/build-site.mjs"
+      - "scripts/smoke-site.mjs"
+      - "vercel.json"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/site.yml"
+  pull_request:
+    paths:
+      - "website/**"
+      - "scripts/build-site.mjs"
+      - "scripts/smoke-site.mjs"
+      - "vercel.json"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/site.yml"
+  workflow_dispatch:
+jobs:
+  website:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npx prettier --check website scripts/build-site.mjs scripts/smoke-site.mjs vercel.json
+      - run: npm run build:site
+      - run: npm run test:site
+        env:
+          PLAYWRIGHT_CHROMIUM_EXECUTABLE: /usr/bin/google-chrome
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: website-preview
+          path: artifacts/website-*.png
+      - uses: actions/upload-artifact@v4
+        with:
+          name: website-static
+          path: website/dist/

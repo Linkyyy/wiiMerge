@@ -9,3 +9,6 @@ release/
 artifacts/
 *.log
 .DS_Store
+
+website/dist/
+.vercel/
