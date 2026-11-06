@@ -108,6 +108,25 @@
       "XLS overview missing",
     );
     await child();
+    const drag = await control("test:windowDrag");
+    console.log("Native drag probe", JSON.stringify(drag));
+    const { before, after, settled } = drag;
+    if (
+      Math.abs(after.x - before.x - 48) > 2 ||
+      Math.abs(after.y - before.y - 32) > 2 ||
+      after.width !== before.width ||
+      after.height !== before.height ||
+      settled.x !== after.x ||
+      settled.y !== after.y ||
+      drag.moves.some(
+        (point) =>
+          Math.abs(point.x - before.x) > 50 ||
+          Math.abs(point.y - before.y) > 34,
+      )
+    )
+      throw new Error(
+        "Native window jumped during drag: " + JSON.stringify(drag),
+      );
     await window.wiiMerge.windowAction("maximize");
     await wait(
       () => document.documentElement.classList.contains("window-maximized"),

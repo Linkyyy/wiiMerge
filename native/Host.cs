@@ -43,7 +43,56 @@ namespace WiiMerge {
     readonly List<MainWindow> children = new List<MainWindow>();
     CoreWebView2Environment browserEnvironment;
     string launchUrl, detailQuery = "", reportId;
-    bool dirty, discardClosing, shadowEnabled;
+    bool dirty, discardClosing, shadowEnabled, recordingMoves;
+    int testDragRequests;
+    readonly List<Point> testMoves = new List<Point>();
+    [StructLayout(LayoutKind.Sequential)] struct MouseInput { public int X, Y; public uint Data, Flags, Time; public IntPtr Extra; }
+    [StructLayout(LayoutKind.Sequential)] struct NativeInput { public uint Type; public MouseInput Mouse; }
+    [DllImport("user32.dll", SetLastError = true)] static extern uint SendInput(uint count, NativeInput[] input, int size);
+    [DllImport("user32.dll")] static extern bool SetCursorPos(int x, int y);
+    static void MouseButton(uint flags) {
+      var input = new[] { new NativeInput { Type = 0, Mouse = new MouseInput { Flags = flags } } };
+      if (SendInput(1, input, Marshal.SizeOf(typeof(NativeInput))) != 1) throw new Exception("Cannot inject native test mouse input.");
+    }
+    protected override void OnLocationChanged(EventArgs e) {
+      base.OnLocationChanged(e);
+      if (recordingMoves && testMoves != null) testMoves.Add(Location);
+    }
+    async Task<object> TestWindowDrag() {
+      if (fixtureFile == null && sharedOwner?.fixtureFile == null) throw new Exception("测试接口未启用。");
+      WindowState = FormWindowState.Normal;
+      var original = Bounds;
+      var work = Screen.FromHandle(Handle).WorkingArea;
+      try {
+        Size = new Size(Math.Min(Width, work.Width - 120), Math.Min(Height, work.Height - 120));
+        Location = new Point(work.Left + 50, work.Top + 50);
+        BringToFront(); Activate();
+        await Task.Delay(150);
+        var before = Bounds;
+        int startX = Left + Width / 2, startY = Top + 20, requests = testDragRequests;
+        testMoves.Clear(); recordingMoves = true;
+        await Task.Run(async () => {
+          SetCursorPos(startX, startY);
+          MouseButton(2);
+          try {
+            await Task.Delay(250);
+            for (int n = 1; n <= 8; n++) { SetCursorPos(startX + n * 6, startY + n * 4); await Task.Delay(40); }
+          } finally { MouseButton(4); }
+        });
+        await Task.Delay(200);
+        var after = Bounds;
+        await Task.Delay(350);
+        var settled = Bounds;
+        recordingMoves = false;
+        return new {
+          before = new { x = before.X, y = before.Y, width = before.Width, height = before.Height },
+          after = new { x = after.X, y = after.Y, width = after.Width, height = after.Height },
+          settled = new { x = settled.X, y = settled.Y, width = settled.Width, height = settled.Height },
+          dragRequests = testDragRequests - requests,
+          moves = testMoves.Select(point => new { x = point.X, y = point.Y }).ToArray()
+        };
+      } finally { recordingMoves = false; Bounds = original; }
+    }
     [DllImport("user32.dll")] static extern bool ReleaseCapture();
     [DllImport("user32.dll")] static extern IntPtr SendMessage(IntPtr h, int m, IntPtr w, IntPtr l);
     [StructLayout(LayoutKind.Sequential)] struct NativePoint { public int X, Y; }
@@ -261,7 +310,7 @@ namespace WiiMerge {
               case "minimize": WindowState = FormWindowState.Minimized; break;
               case "maximize": ToggleMaximize(); break;
               case "close": BeginInvoke(new Action(Close)); break;
-              case "drag": ReleaseCapture(); SendMessage(Handle, 0xA1, new IntPtr(2), IntPtr.Zero); break;
+              case "drag": testDragRequests++; ReleaseCapture(); SendMessage(Handle, 0xA1, new IntPtr(2), IntPtr.Zero); break;
               case "resize-n": case "resize-s": case "resize-e": case "resize-w":
               case "resize-ne": case "resize-nw": case "resize-se": case "resize-sw":
                 if (WindowState == FormWindowState.Normal) {
@@ -346,6 +395,8 @@ namespace WiiMerge {
             var docForDrop = serializer.Deserialize<Dictionary<string, object>>(await view.CoreWebView2.CallDevToolsProtocolMethodAsync("DOM.getDocument", "{}"));
             var inputForDrop = serializer.Deserialize<Dictionary<string, object>>(await view.CoreWebView2.CallDevToolsProtocolMethodAsync("DOM.querySelector", serializer.Serialize(new { nodeId = ((Dictionary<string, object>)docForDrop["root"])["nodeId"], selector = "#native-host-file-test" })));
             await view.CoreWebView2.CallDevToolsProtocolMethodAsync("DOM.setFileInputFiles", serializer.Serialize(new { nodeId = inputForDrop["nodeId"], files = new[] { Fixture("dropLeft"), Fixture("dropRight") } })); result = true; break;
+          case "test:windowDrag":
+            result = await TestWindowDrag(); break;
           case "test:windowGeometry":
             if (fixtureFile == null && sharedOwner?.fixtureFile == null) throw new Exception("测试接口未启用。");
             var screen = Screen.FromHandle(Handle);
