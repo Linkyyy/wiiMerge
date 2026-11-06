@@ -6,7 +6,7 @@ Windows 优先的本地桌面差异比较工具，使用 React 界面和共享 N
 
 Windows 10 / 11 x64：在 [GitHub Actions 构建页面](https://github.com/Linkyyy/wiiMerge/actions/workflows/ci.yml) 打开成功的构建记录，从 **Artifacts → wiiMerge-WebView2-Windows-x64** 下载精简版 ZIP（需要登录 GitHub）。**解压整个 ZIP 后运行 `wiiMerge.exe`**，请勿只复制启动器。无需另装 Node.js 或 Office。这是未签名的开发版便携程序。
 
-[0.4.0 构建与下载](https://github.com/Linkyyy/wiiMerge/actions/workflows/ci.yml)
+[0.4.0 下载页面](https://github.com/Linkyyy/wiiMerge/actions/runs/42151641564#artifacts)
 
 精简版依赖系统的 **Microsoft Edge WebView2 Runtime 和 .NET Framework 4.8**，Windows 11 通常自带；缺少 WebView2 时程序会提示微软官方安装地址。它仍然自带比较引擎，正常比较不需要联网。旧版 Electron 的规则配置继续可用。
 
