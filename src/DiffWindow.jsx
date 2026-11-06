@@ -10,7 +10,23 @@ import {
   RotateCcw,
   Save,
   X,
+  Menu,
+  Info,
+  CircleAlert,
+  Keyboard,
+  MoreHorizontal,
+  PanelLeftClose,
+  PanelLeftOpen,
+  ChevronUp,
+  ChevronDown,
+  SquarePen,
 } from "lucide-react";
+import {
+  ActionMenu,
+  PopupMenu,
+  ToolButton,
+  ToolbarSlot,
+} from "./WorkspaceControls.jsx";
 import Titlebar from "./Titlebar.jsx";
 import FolderOverview from "./FolderOverview.jsx";
 import { Detail, CharacterDiff } from "./App.jsx";
@@ -40,8 +56,12 @@ export default function DiffWindow() {
     [error, setError] = useState(""),
     [message, setMessage] = useState(""),
     [busy, setBusy] = useState(false),
-    [onlyDiff, setOnlyDiff] = useState(false),
-    [filter, setFilter] = useState("all");
+    [filter, setFilter] = useState("all"),
+    [toolbarHost, setToolbarHost] = useState(null),
+    [showNavigation, setShowNavigation] = useState(true),
+    [showTextNavigation, setShowTextNavigation] = useState(false),
+    [panel, setPanel] = useState(null),
+    [tabContext, setTabContext] = useState(null);
   const docsRef = useRef(docs);
   docsRef.current = docs;
   const dirty = Object.values(docs).some(
@@ -174,6 +194,38 @@ export default function DiffWindow() {
       setBusy(false);
     }
   }
+  function closeTab(id = active) {
+    if (id === "overview") return;
+    setTabs((ts) => {
+      const index = ts.findIndex((t) => t.id === id),
+        next = ts.filter((t) => t.id !== id);
+      if (active === id)
+        setActive(next[Math.max(0, index - 1)]?.id || "overview");
+      return next;
+    });
+  }
+  useEffect(() => {
+    const key = (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === "Tab") {
+        e.preventDefault();
+        const index = tabs.findIndex((t) => t.id === active);
+        setActive(
+          tabs[(index + (e.shiftKey ? -1 : 1) + tabs.length) % tabs.length].id,
+        );
+      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "w") {
+        e.preventDefault();
+        closeTab();
+      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "b") {
+        e.preventDefault();
+        setShowNavigation((v) => !v);
+      } else if (e.key === "F1") {
+        e.preventDefault();
+        setPanel("shortcuts");
+      } else if (e.key === "Escape") setPanel(null);
+    };
+    window.addEventListener("keydown", key);
+    return () => window.removeEventListener("keydown", key);
+  }, [tabs, active]);
   if (!report)
     return (
       <div className="diff-window">
@@ -184,84 +236,323 @@ export default function DiffWindow() {
       </div>
     );
   return (
-    <div className="diff-window">
-      <Titlebar title="wiiMerge · 差分工作区">
-        <span className="window-subtitle">
-          {base(report.leftLabel)} ↔ {base(report.rightLabel)}
-        </span>
-      </Titlebar>
-      <div className="diff-topbar">
-        <b>
-          {(report.objectSummary || report.summary).total} 个条目 ·{" "}
-          {(report.objectSummary || report.summary).changed +
-            (report.objectSummary || report.summary).added +
-            (report.objectSummary || report.summary).removed}{" "}
-          项不同
-        </b>
-        <label>
-          <input
-            type="checkbox"
-            checked={onlyDiff}
-            onChange={(e) => setOnlyDiff(e.target.checked)}
-          />
-          只看不同
-        </label>
-        <span className="grow" />
-        {dirty && <span className="dirty-label">含未保存改动</span>}
-        <button
-          className="button secondary"
-          disabled={busy}
-          onClick={() => exportAll("html")}
+    <div className="diff-window compact-workspace">
+      <Titlebar title="wiiMerge · 差分工作区" compact>
+        <ActionMenu
+          icon={Menu}
+          label="工作区菜单"
+          items={[
+            {
+              label: "差分一览",
+              icon: Archive,
+              action: () => setActive("overview"),
+            },
+            { separator: true },
+            {
+              label: "HTML 报告",
+              icon: Download,
+              disabled: busy,
+              action: () => exportAll("html"),
+            },
+            {
+              label: "Excel 报告",
+              icon: Download,
+              disabled: busy,
+              action: () => exportAll("xlsx"),
+            },
+            { separator: true },
+            {
+              label: "显示差分导航",
+              checked: showNavigation,
+              shortcut: "Ctrl+B",
+              action: () => setShowNavigation((v) => !v),
+            },
+            {
+              label: "显示文字导航",
+              checked: showTextNavigation,
+              action: () => setShowTextNavigation((v) => !v),
+            },
+            { label: "比较信息", icon: Info, action: () => setPanel("info") },
+            {
+              label: "归档提示",
+              icon: CircleAlert,
+              disabled: !report.warnings?.length && !item?.warnings?.length,
+              action: () => setPanel("warnings"),
+            },
+            {
+              label: "快捷键",
+              icon: Keyboard,
+              shortcut: "F1",
+              action: () => setPanel("shortcuts"),
+            },
+            { separator: true },
+            {
+              label: "关闭当前标签",
+              icon: X,
+              disabled: active === "overview",
+              shortcut: "Ctrl+W",
+              action: () => closeTab(),
+            },
+            {
+              label: "关闭其他标签",
+              disabled: tabs.length < 2,
+              action: () =>
+                setTabs((ts) =>
+                  ts.filter((t) => t.id === active || t.id === "overview"),
+                ),
+            },
+          ]}
+        />
+        <div
+          className="document-tabs"
+          role="tablist"
+          aria-label="差分工作区标签"
         >
-          <Download size={14} />
-          HTML 报告
-        </button>
-        <button
-          className="button secondary"
-          disabled={busy}
-          onClick={() => exportAll("xlsx")}
-        >
-          <Download size={14} />
-          Excel 报告
-        </button>
-      </div>
-      <ArchiveWarnings warnings={report.warnings} />
-      <div className="document-tabs">
-        {tabs.map((t) => (
-          <div key={t.id} className={active === t.id ? "active" : ""}>
-            <button
-              title={
-                t.path ||
-                report.folders?.find((f) => f.key === t.folderKey)?.path ||
-                t.name
-              }
-              onClick={() => setActive(t.id)}
+          {tabs.map((t) => (
+            <div
+              key={t.id}
+              className={active === t.id ? "active" : ""}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                setTabContext({
+                  id: t.id,
+                  anchor: {
+                    x: e.clientX,
+                    y: e.clientY,
+                    focus: e.currentTarget.querySelector("button"),
+                  },
+                });
+                setPanel(null);
+              }}
             >
-              {t.type === "archive" ? (
-                <Archive size={14} />
-              ) : (
-                <FileText size={14} />
-              )}
-              {t.name}
-              {docs[t.itemKey] &&
-                (docs[t.itemKey].left !== docs[t.itemKey].savedLeft ||
-                  docs[t.itemKey].right !== docs[t.itemKey].savedRight) &&
-                " ●"}
-            </button>
-            {t.id !== "overview" && (
               <button
-                aria-label={`关闭 ${t.name}`}
-                onClick={() => {
-                  setTabs((ts) => ts.filter((x) => x.id !== t.id));
-                  if (active === t.id) setActive("overview");
-                }}
+                role="tab"
+                aria-selected={active === t.id}
+                tabIndex={active === t.id ? 0 : -1}
+                title={
+                  t.path ||
+                  report.folders?.find((f) => f.key === t.folderKey)?.path ||
+                  t.name
+                }
+                onClick={() => setActive(t.id)}
               >
-                <X size={12} />
+                {t.type === "archive" ? (
+                  <Archive size={14} />
+                ) : (
+                  <FileText size={14} />
+                )}
+                <span>{t.name}</span>
+                {docs[t.itemKey] &&
+                  (docs[t.itemKey].left !== docs[t.itemKey].savedLeft ||
+                    docs[t.itemKey].right !== docs[t.itemKey].savedRight) && (
+                    <i className="tab-dirty" aria-label="未保存" />
+                  )}
               </button>
-            )}
-          </div>
-        ))}
+              {t.id !== "overview" && (
+                <button
+                  aria-label={`关闭 ${t.name}`}
+                  title="关闭标签 (Ctrl+W)"
+                  onClick={() => closeTab(t.id)}
+                >
+                  <X size={12} />
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      </Titlebar>
+      {tabContext && (
+        <PopupMenu
+          anchor={tabContext.anchor}
+          label="标签快捷菜单"
+          onClose={() => setTabContext(null)}
+          items={[
+            {
+              label: "关闭标签",
+              icon: X,
+              shortcut: "Ctrl+W",
+              disabled: tabContext.id === "overview",
+              action: () => closeTab(tabContext.id),
+            },
+            {
+              label: "关闭其他标签",
+              disabled: tabs.length < 2,
+              action: () => {
+                setActive(tabContext.id);
+                setTabs((ts) =>
+                  ts.filter(
+                    (t) => t.id === tabContext.id || t.id === "overview",
+                  ),
+                );
+              },
+            },
+            { separator: true },
+            {
+              label: "返回差分一览",
+              icon: Archive,
+              action: () => setActive("overview"),
+            },
+          ]}
+        />
+      )}
+      <div
+        className="workspace-commandbar"
+        role="toolbar"
+        aria-label="差分操作"
+      >
+        <div className="workspace-active-tools" ref={setToolbarHost} />
+        <div className="workspace-common-tools">
+          {item && item.type !== "text" && (
+            <>
+              <ToolButton
+                icon={ArrowRight}
+                label="整文件使用左边"
+                disabled={
+                  busy ||
+                  mixedExcel ||
+                  !!item.error ||
+                  item.type === "directory"
+                }
+                onClick={() => adoptWhole("left")}
+              />
+              <ToolButton
+                icon={ArrowLeft}
+                label="整文件使用右边"
+                disabled={
+                  busy ||
+                  mixedExcel ||
+                  !!item.error ||
+                  item.type === "directory"
+                }
+                onClick={() => adoptWhole("right")}
+              />
+            </>
+          )}
+          {tab.type === "file" && ["text", "excel"].includes(item?.type) && (
+            <ToolButton
+              icon={showNavigation ? PanelLeftClose : PanelLeftOpen}
+              label={showNavigation ? "隐藏差分导航" : "显示差分导航"}
+              shortcut="Ctrl+B"
+              active={showNavigation}
+              onClick={() => setShowNavigation((v) => !v)}
+            />
+          )}
+          <ActionMenu
+            icon={Download}
+            label="导出报告"
+            items={[
+              {
+                label: "HTML 报告",
+                disabled: busy,
+                action: () => exportAll("html"),
+              },
+              {
+                label: "Excel 报告",
+                disabled: busy,
+                action: () => exportAll("xlsx"),
+              },
+            ]}
+          />
+          {!!(report.warnings?.length || item?.warnings?.length) && (
+            <ToolButton
+              icon={CircleAlert}
+              label="归档提示"
+              onClick={() => setPanel("warnings")}
+            />
+          )}
+          <ToolButton
+            icon={Info}
+            label="比较信息"
+            onClick={() => setPanel("info")}
+          />
+          {dirty && (
+            <i
+              className="workspace-dirty"
+              title="含未保存的合并内容"
+              aria-label="含未保存改动"
+            />
+          )}
+          {busy && (
+            <LoaderCircle size={14} className="spin" aria-label="正在处理" />
+          )}
+        </div>
       </div>
+      {panel && (
+        <div
+          className="workspace-info-panel"
+          role="dialog"
+          aria-label={
+            panel === "info"
+              ? "比较信息"
+              : panel === "warnings"
+                ? "归档提示"
+                : "快捷键"
+          }
+        >
+          <div className="workspace-panel-heading">
+            <b>
+              {panel === "info"
+                ? "比较信息"
+                : panel === "warnings"
+                  ? "归档提示"
+                  : "快捷键"}
+            </b>
+            <ToolButton
+              icon={X}
+              label="关闭信息面板"
+              onClick={() => setPanel(null)}
+            />
+          </div>
+          {panel === "info" ? (
+            <>
+              <dl>
+                <dt>左侧</dt>
+                <dd>{report.leftLabel}</dd>
+                <dt>右侧</dt>
+                <dd>{report.rightLabel}</dd>
+                <dt>当前左侧文件</dt>
+                <dd>{item?.leftPath || "—"}</dd>
+                <dt>当前右侧文件</dt>
+                <dd>{item?.rightPath || "—"}</dd>
+                <dt>比较对象</dt>
+                <dd>
+                  {(report.objectSummary || report.summary).total} 项 · 错误{" "}
+                  {(report.objectSummary || report.summary).error} 项
+                </dd>
+              </dl>
+              <details>
+                <summary>比较规则</summary>
+                <pre>{JSON.stringify(report.rules, null, 2)}</pre>
+              </details>
+              <p>保存会检查外部修改并保留备份；归档内容通过另存为保存。</p>
+            </>
+          ) : panel === "warnings" ? (
+            <>
+              <ArchiveWarnings warnings={report.warnings} />
+              <ArchiveWarnings warnings={item?.warnings} entry />
+            </>
+          ) : (
+            <dl className="shortcut-list">
+              <dt>F7 / Shift+F7</dt>
+              <dd>下一处 / 上一处差异</dd>
+              <dt>Alt+→ / Alt+←</dt>
+              <dd>使用左边 / 使用右边</dd>
+              <dt>Ctrl+S</dt>
+              <dd>保存当前选中侧</dd>
+              <dt>Ctrl+Shift+S</dt>
+              <dd>当前侧另存为</dd>
+              <dt>Ctrl+B</dt>
+              <dd>显示 / 隐藏差分导航</dd>
+              <dt>Ctrl+Tab</dt>
+              <dd>下一个标签（加 Shift 反向）</dd>
+              <dt>Ctrl+W</dt>
+              <dd>关闭当前标签</dd>
+              <dt>F1</dt>
+              <dd>快捷键说明</dd>
+            </dl>
+          )}
+        </div>
+      )}
       {(error || message) && (
         <div
           className={`notice ${error ? "error-notice" : ""}`}
@@ -283,16 +574,15 @@ export default function DiffWindow() {
           <div className="archive-overview">
             <FolderOverview
               key={tab.id}
+              compact
+              toolbarHost={toolbarHost}
               report={report}
               folderKey={tab.folderKey}
               onNavigate={navigate}
               onOpenFile={openItem}
               onOpenArchive={openArchive}
-              filter={onlyDiff ? "differences" : filter}
-              onFilter={(value) => {
-                setOnlyDiff(false);
-                setFilter(value);
-              }}
+              filter={filter}
+              onFilter={setFilter}
             />
           </div>
         ) : item?.type === "text" && doc ? (
@@ -302,59 +592,46 @@ export default function DiffWindow() {
             change={change}
             save={save}
             busy={busy}
-            warnings={item.warnings}
+            toolbarHost={toolbarHost}
+            showNavigation={showNavigation}
+            showTextNavigation={showTextNavigation}
           />
         ) : (
           <div className="readonly-document">
-            <div className="whole-file-toolbar">
-              <span>
-                {mixedExcel
-                  ? "跨格式 Excel 比较：整文件采用需要两侧格式相同"
-                  : "Excel / 二进制采用整文件替换（保留原文件备份）"}
-              </span>
-              <button
-                disabled={
-                  busy ||
-                  mixedExcel ||
-                  !!item?.error ||
-                  item?.type === "directory"
-                }
-                onClick={() => adoptWhole("left")}
-              >
-                整文件使用左边 →
-              </button>
-              <button
-                disabled={
-                  busy ||
-                  mixedExcel ||
-                  !!item?.error ||
-                  item?.type === "directory"
-                }
-                onClick={() => adoptWhole("right")}
-              >
-                ← 整文件使用右边
-              </button>
-            </div>
             <div className="detail-panel">
-              {item && <Detail key={item.key} item={item} />}
+              {item && (
+                <Detail
+                  key={item.key}
+                  item={item}
+                  compact
+                  toolbarHost={toolbarHost}
+                  showNavigation={showNavigation}
+                  showTextNavigation={showTextNavigation}
+                />
+              )}
             </div>
           </div>
         )}
       </div>
-      <footer className="editor-status">
-        F7 下一处 · Shift+F7 上一处 · Alt+→ 使用左边 · Alt+← 使用右边 · Ctrl+S
-        保存当前侧<span>归档内容可合并后另存；原压缩包保持不变</span>
-      </footer>
     </div>
   );
 }
 
-function TextEditor({ doc, change, save, busy, warnings }) {
+function TextEditor({
+  doc,
+  change,
+  save,
+  busy,
+  toolbarHost,
+  showNavigation,
+  showTextNavigation,
+}) {
   const [cursor, setCursor] = useState(0),
     [limit, setLimit] = useState(600),
     [editing, setEditing] = useState(false),
     [side, setSide] = useState("right"),
-    [history, setHistory] = useState([]);
+    [history, setHistory] = useState([]),
+    [context, setContext] = useState(null);
   const scroll = useRef(null);
   const model = useMemo(() => {
     try {
@@ -432,7 +709,7 @@ function TextEditor({ doc, change, save, busy, warnings }) {
         adopt("right");
       } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
         e.preventDefault();
-        if (!busy) save(doc, side);
+        if (!busy) save(doc, side, e.shiftKey);
       }
     };
     window.addEventListener("keydown", key);
@@ -441,98 +718,204 @@ function TextEditor({ doc, change, save, busy, warnings }) {
   const firstRows = new Map(model.hunks.map((h, i) => [h.row, i]));
   return (
     <div className="text-document">
-      <aside className="hunk-navigation">
-        <b>
-          差分导航 <span>{model.hunks.length}</span>
-        </b>
-        <DiffMap
-          navigation={navigation}
-          current={current}
-          onJump={jump}
-          viewport={viewport}
+      <ToolbarSlot host={toolbarHost}>
+        <ToolButton
+          icon={ChevronUp}
+          label="上一处差异"
+          shortcut="Shift+F7"
+          disabled={!model.hunks.length}
+          onClick={() => jump(current - 1)}
         />
-        <div className="nav-prev-next">
-          <button onClick={() => jump(current - 1)}>上一处</button>
-          <button onClick={() => jump(current + 1)}>下一处</button>
-        </div>
-        <details className="text-navigation">
-          <summary>文本导航</summary>
-          {model.hunks.map((h, i) => (
-            <button
-              className={current === i ? "active" : ""}
-              key={i}
-              onClick={() => jump(i)}
-            >
-              <strong>
-                差分 {i + 1} · 左 {h.leftStart + 1} / 右 {h.rightStart + 1}
-              </strong>
-              <small>
-                {(
-                  model.rows[h.row]?.left ||
-                  model.rows[h.row]?.right ||
-                  "空行"
-                ).slice(0, 85)}
-              </small>
-            </button>
-          ))}
-        </details>
-      </aside>
-      <div className="editor-main">
-        <ArchiveWarnings warnings={warnings} entry />
-        <div className="merge-toolbar">
-          <button
-            disabled={!model.hunks.length || busy}
-            onClick={() => adopt("left")}
-            title="Alt+→"
-          >
-            <ArrowRight size={14} />
-            使用左边
-          </button>
-          <button
-            disabled={!model.hunks.length || busy}
-            onClick={() => adopt("right")}
-            title="Alt+←"
-          >
-            <ArrowLeft size={14} />
-            使用右边
-          </button>
-          <button disabled={!history.length || busy} onClick={undo}>
-            <RotateCcw size={14} />
-            撤销合并
-          </button>
-          <span className="grow" />
-          <button onClick={() => setEditing((v) => !v)}>
-            {editing ? "查看差分" : "编辑文本"}
-          </button>
-        </div>
-        <div className="editor-sides">
-          {["left", "right"].map((s) => (
-            <div
-              key={s}
-              onClick={() => setSide(s)}
-              className={side === s ? "active" : ""}
-            >
-              <span>
-                {s === "left" ? "A · 左侧" : "B · 右侧"} ·{" "}
-                {doc.sides[s].encoding}
-              </span>
-              <b title={doc.sides[s].label}>{doc.sides[s].label}</b>
+        <ToolButton
+          icon={ChevronDown}
+          label="下一处差异"
+          shortcut="F7"
+          disabled={!model.hunks.length}
+          onClick={() => jump(current + 1)}
+        />
+        <span className="workspace-tool-count">
+          {model.hunks.length ? current + 1 : 0} / {model.hunks.length}
+        </span>
+        <span className="workspace-tool-separator" />
+        <ToolButton
+          icon={ArrowRight}
+          label="使用左边"
+          shortcut="Alt+→"
+          disabled={busy || !model.hunks.length}
+          onClick={() => adopt("left")}
+        />
+        <ToolButton
+          icon={ArrowLeft}
+          label="使用右边"
+          shortcut="Alt+←"
+          disabled={busy || !model.hunks.length}
+          onClick={() => adopt("right")}
+        />
+        <ToolButton
+          icon={RotateCcw}
+          label="撤销合并"
+          disabled={busy || !history.length}
+          onClick={undo}
+        />
+        <span className="workspace-tool-separator" />
+        <select
+          className="workspace-side-select"
+          aria-label="保存目标侧"
+          value={side}
+          onChange={(e) => setSide(e.target.value)}
+        >
+          <option value="left">左侧</option>
+          <option value="right">右侧</option>
+        </select>
+        <ToolButton
+          icon={Save}
+          label={`${doc.sides[side].writable ? "保存" : "另存"}${side === "left" ? "左侧" : "右侧"}`}
+          shortcut="Ctrl+S"
+          disabled={
+            busy ||
+            (doc.sides[side].writable &&
+              doc[side] === doc[side === "left" ? "savedLeft" : "savedRight"])
+          }
+          onClick={() => save(doc, side)}
+        />
+        <ToolButton
+          icon={SquarePen}
+          label={editing ? "查看差分" : "编辑文本"}
+          active={editing}
+          onClick={() => setEditing((v) => !v)}
+        />
+        <ActionMenu
+          icon={MoreHorizontal}
+          label="更多文件操作"
+          items={[
+            {
+              label: "保存左侧",
+              disabled: busy,
+              action: () => save(doc, "left"),
+            },
+            {
+              label: "保存右侧",
+              disabled: busy,
+              action: () => save(doc, "right"),
+            },
+            {
+              label: "左侧另存为",
+              disabled: busy,
+              action: () => save(doc, "left", true),
+            },
+            {
+              label: "右侧另存为",
+              disabled: busy,
+              action: () => save(doc, "right", true),
+            },
+          ]}
+        />
+      </ToolbarSlot>
+      {showNavigation && (
+        <aside className="hunk-navigation">
+          <b>
+            差分导航 <span>{model.hunks.length}</span>
+          </b>
+          <DiffMap
+            navigation={navigation}
+            current={current}
+            onJump={jump}
+            viewport={viewport}
+          />
+          <details className="text-navigation" hidden={!showTextNavigation}>
+            <summary>文本导航</summary>
+            {model.hunks.map((h, i) => (
               <button
-                disabled={
-                  busy ||
-                  doc[s] === doc[s === "left" ? "savedLeft" : "savedRight"]
-                }
-                onClick={() => save(doc, s)}
+                className={current === i ? "active" : ""}
+                key={i}
+                onClick={() => jump(i)}
               >
-                <Save size={13} />
-                {doc.sides[s].writable ? "保存" : "另存为"}
+                <strong>
+                  差分 {i + 1} · 左 {h.leftStart + 1} / 右 {h.rightStart + 1}
+                </strong>
+                <small>
+                  {(
+                    model.rows[h.row]?.left ||
+                    model.rows[h.row]?.right ||
+                    "空行"
+                  ).slice(0, 85)}
+                </small>
               </button>
-              <button disabled={busy} onClick={() => save(doc, s, true)}>
-                另存为
-              </button>
-            </div>
-          ))}
-        </div>
+            ))}
+          </details>
+        </aside>
+      )}
+      <div
+        className="editor-main"
+        onPointerDown={(e) => {
+          if (e.target.closest(".left-cell")) setSide("left");
+          else if (e.target.closest(".right-cell")) setSide("right");
+        }}
+        onContextMenu={(e) => {
+          if (e.target.closest("textarea")) return;
+          e.preventDefault();
+          const row = Number(
+            e.target.closest("[data-merge-row]")?.dataset.mergeRow,
+          );
+          const index = model.hunks.findIndex(
+            (h) => row >= h.row && row < h.endRow,
+          );
+          const targetSide = e.target.closest(".left-cell")
+            ? "left"
+            : e.target.closest(".right-cell")
+              ? "right"
+              : side;
+          if (index >= 0) setCursor(index);
+          setSide(targetSide);
+          setContext({
+            index: index >= 0 ? index : current,
+            side: targetSide,
+            anchor: { x: e.clientX, y: e.clientY, focus: e.currentTarget },
+          });
+        }}
+      >
+        {context && (
+          <PopupMenu
+            anchor={context.anchor}
+            label="文本差分快捷菜单"
+            onClose={() => setContext(null)}
+            items={[
+              {
+                label: "使用左边",
+                icon: ArrowRight,
+                shortcut: "Alt+→",
+                disabled: busy || !model.hunks.length,
+                action: () => adopt("left", context.index),
+              },
+              {
+                label: "使用右边",
+                icon: ArrowLeft,
+                shortcut: "Alt+←",
+                disabled: busy || !model.hunks.length,
+                action: () => adopt("right", context.index),
+              },
+              {
+                label: "撤销合并",
+                icon: RotateCcw,
+                disabled: busy || !history.length,
+                action: undo,
+              },
+              { separator: true },
+              {
+                label: `保存${context.side === "left" ? "左侧" : "右侧"}`,
+                icon: Save,
+                shortcut: "Ctrl+S",
+                disabled: busy,
+                action: () => save(doc, context.side),
+              },
+              {
+                label: `${context.side === "left" ? "左侧" : "右侧"}另存为`,
+                disabled: busy,
+                action: () => save(doc, context.side, true),
+              },
+            ]}
+          />
+        )}
         {model.error && (
           <div className="notice error-notice">{model.error}</div>
         )}
@@ -559,6 +942,38 @@ function TextEditor({ doc, change, save, busy, warnings }) {
                 <col style={{ width: 42 }} />
                 <col />
               </colgroup>
+              <thead className="merge-column-head">
+                <tr>
+                  <th colSpan={2}>
+                    <button
+                      className={side === "left" ? "active" : ""}
+                      aria-label="选择左侧为保存目标"
+                      title={doc.sides.left.label}
+                      onClick={() => setSide("left")}
+                    >
+                      A · 左侧{" "}
+                      <span>
+                        {base(doc.sides.left.label)} · {doc.sides.left.encoding}
+                      </span>
+                    </button>
+                  </th>
+                  <th />
+                  <th colSpan={2}>
+                    <button
+                      className={side === "right" ? "active" : ""}
+                      aria-label="选择右侧为保存目标"
+                      title={doc.sides.right.label}
+                      onClick={() => setSide("right")}
+                    >
+                      B · 右侧{" "}
+                      <span>
+                        {base(doc.sides.right.label)} ·{" "}
+                        {doc.sides.right.encoding}
+                      </span>
+                    </button>
+                  </th>
+                </tr>
+              </thead>
               <tbody>
                 {model.rows.slice(0, limit).map((r, i) => (
                   <tr
@@ -636,9 +1051,6 @@ function TextEditor({ doc, change, save, busy, warnings }) {
             )}
           </div>
         )}
-        <div className="merge-footnote">
-          合并按原始文本对齐，保留忽略行；保存会检查文件版本并自动备份。
-        </div>
       </div>
     </div>
   );

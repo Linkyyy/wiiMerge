@@ -3252,3 +3252,331 @@ kbd {
   flex-wrap: wrap;
   gap: 5px;
 }
+
+/* Compact work area: one tab/title row and one action row. */
+.compact-titlebar {
+  padding-left: 6px;
+  height: 40px;
+}
+.compact-titlebar .titlebar-tools {
+  justify-content: flex-start;
+  gap: 4px;
+  padding: 0;
+  align-self: stretch;
+}
+.compact-titlebar .document-tabs {
+  border: 0;
+  min-height: 0;
+  height: 40px;
+  flex: 0 1 auto;
+  min-width: 0;
+  background: transparent;
+  scrollbar-width: none;
+  -webkit-app-region: no-drag;
+}
+.compact-titlebar .document-tabs > div {
+  border: 0;
+  flex-shrink: 0;
+  border-radius: 5px 5px 0 0;
+  margin-top: 4px;
+}
+.compact-titlebar .document-tabs > div.active {
+  border-top: 0;
+  background: #edf2fc;
+  box-shadow: inset 0 -2px #6c80cf;
+}
+.compact-titlebar .document-tabs button {
+  padding: 6px 9px;
+}
+.compact-titlebar .document-tabs [role="tab"] > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 230px;
+}
+.compact-titlebar .workspace-tool {
+  align-self: center;
+  margin-right: 3px;
+}
+.tab-dirty,
+.workspace-dirty {
+  width: 5px;
+  height: 5px;
+  background: #d69e52;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.workspace-commandbar {
+  display: flex;
+  height: 38px;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 8px;
+  background: #f8faff;
+  border-bottom: 1px solid #e4eaf3;
+  padding: 0 8px;
+}
+.workspace-active-tools {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+.workspace-common-tools {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  flex-shrink: 0;
+}
+.workspace-tool {
+  display: inline-flex;
+  width: 29px;
+  height: 28px;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  border-radius: 5px;
+  color: #7e91b3;
+}
+.workspace-tool:hover {
+  background: #e9effb;
+  color: #526cb7;
+}
+.workspace-tool.is-active {
+  background: #e9effb;
+  color: #5a73bd;
+}
+.workspace-tool:disabled {
+  opacity: 0.35;
+}
+.workspace-tool:focus-visible,
+.workspace-popup button:focus-visible {
+  outline: 2px solid #9fb1e8;
+  outline-offset: -2px;
+}
+.workspace-tool-count {
+  color: #93a3be;
+  font-size: 10px;
+  white-space: nowrap;
+  padding: 0 5px;
+}
+.workspace-tool-separator {
+  width: 1px;
+  height: 17px;
+  background: #e1e7f1;
+  margin: 0 5px;
+  flex-shrink: 0;
+}
+.workspace-side-select,
+.workspace-sheet-select {
+  height: 25px;
+  color: #7b8eaf;
+  border: 0;
+  border-radius: 4px;
+  background: #eef3fc;
+  font-size: 10px;
+  padding: 2px 5px;
+  max-width: 200px;
+}
+.workspace-side-select {
+  width: 62px;
+}
+.workspace-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 100px;
+  max-width: 320px;
+  padding: 0 8px;
+  color: #9aabc7;
+}
+.workspace-search input {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  outline: none;
+  font-size: 11px;
+  color: #6d83a6;
+}
+.workspace-folder-label {
+  border: 0;
+  background: transparent;
+  color: #8398b8;
+  font-size: 10px;
+  max-width: 140px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding: 3px;
+  flex-shrink: 0;
+}
+.workspace-popup {
+  position: fixed;
+  z-index: 45000;
+  min-width: 210px;
+  max-width: min(380px, calc(100vw - 12px));
+  max-height: calc(100vh - 12px);
+  overflow: auto;
+  border: 1px solid #e5eaf3;
+  border-radius: 7px;
+  background: white;
+  box-shadow: 0 8px 35px #324c7726;
+  padding: 5px;
+  -webkit-app-region: no-drag;
+}
+.workspace-popup button {
+  width: 100%;
+  display: flex;
+  gap: 9px;
+  align-items: center;
+  border: 0;
+  padding: 8px 9px;
+  background: transparent;
+  text-align: left;
+  color: #6c80a2;
+  font-size: 11px;
+  border-radius: 4px;
+}
+.workspace-popup button:hover,
+.workspace-popup button:focus {
+  background: #eff3fc;
+  outline: none;
+}
+.workspace-popup button:disabled {
+  opacity: 0.4;
+}
+.workspace-popup button > span:not(.menu-check) {
+  flex: 1;
+}
+.workspace-popup kbd {
+  font: 9px system-ui;
+  color: #a0afc5;
+  padding-left: 14px;
+}
+.menu-check {
+  width: 15px;
+  font-size: 11px;
+  flex-shrink: 0;
+}
+.menu-separator {
+  margin: 4px 5px;
+  border-top: 1px solid #edf1f7;
+}
+.workspace-info-panel {
+  position: fixed;
+  z-index: 40000;
+  top: 84px;
+  right: 12px;
+  width: min(480px, calc(100vw - 24px));
+  max-height: calc(100vh - 100px);
+  overflow: auto;
+  background: white;
+  border: 1px solid #e2e9f4;
+  border-radius: 8px;
+  box-shadow: 0 10px 40px #324c7722;
+  padding: 12px 16px;
+  color: #8192ac;
+  font-size: 11px;
+}
+.workspace-panel-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.workspace-info-panel dl {
+  display: grid;
+  grid-template-columns: 110px minmax(0, 1fr);
+  gap: 9px;
+  margin: 12px 0;
+}
+.workspace-info-panel dt {
+  color: #99a8bd;
+}
+.workspace-info-panel dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.workspace-info-panel pre {
+  white-space: pre-wrap;
+  font-size: 10px;
+  max-height: 200px;
+  overflow: auto;
+}
+.workspace-info-panel p {
+  line-height: 1.8;
+}
+.compact-workspace > .notice {
+  position: absolute;
+  right: 12px;
+  top: 84px;
+  z-index: 39000;
+  max-width: min(700px, calc(100vw - 24px));
+  box-shadow: 0 4px 20px #556e9620;
+  border-radius: 6px;
+  background: #fff;
+  border: 1px solid #e3e9f5;
+  padding: 10px 14px;
+}
+.compact-workspace .archive-overview {
+  padding: 8px 12px;
+}
+.compact-workspace .readonly-document {
+  padding-top: 0;
+}
+.compact-workspace .detail-panel {
+  border: 0;
+}
+.compact-workspace .hunk-navigation {
+  padding-top: 10px;
+}
+.merge-column-head {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  background: #f9fbff;
+}
+.merge-column-head th {
+  padding: 0;
+  font-weight: 400;
+  text-align: left;
+  border-bottom: 1px solid #e6ecf6;
+}
+.merge-column-head button {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 10px;
+  color: #8297b8;
+  font-size: 10px;
+  background: transparent;
+  text-align: left;
+  height: 30px;
+}
+.merge-column-head button.active {
+  box-shadow: inset 0 -2px #9babdf;
+}
+.merge-column-head button span {
+  font-size: 9px;
+  color: #a1afc5;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.map-expand {
+  align-self: center;
+  padding: 7px;
+  border-radius: 4px;
+  width: 28px;
+  height: 26px;
+  margin: 3px;
+}
+.map-expand:hover {
+  background: #eaf0fc;
+}

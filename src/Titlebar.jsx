@@ -1,6 +1,10 @@
 import React from "react";
 import { ArrowLeftRight, Minus, Square, X } from "lucide-react";
-export default function Titlebar({ title = "wiiMerge", children }) {
+export default function Titlebar({
+  title = "wiiMerge",
+  children,
+  compact = false,
+}) {
   const api = window.wiiMerge;
   return (
     <>
@@ -21,19 +25,26 @@ export default function Titlebar({ title = "wiiMerge", children }) {
         </div>
       )}
       <header
-        className="titlebar"
+        className={`titlebar ${compact ? "compact-titlebar" : ""}`}
         onMouseDown={(e) => {
-          if (e.button === 0 && !e.target.closest("button,input,select"))
+          if (
+            e.button === 0 &&
+            !e.target.closest(
+              "button,input,select,textarea,a,[role=tablist],[data-no-drag]",
+            )
+          )
             api?.windowAction?.("drag");
         }}
         onDoubleClick={(e) => {
           if (!e.target.closest("button")) api?.windowAction?.("maximize");
         }}
       >
-        <div className="titlebar-brand">
-          <ArrowLeftRight size={18} />
-          <strong>{title}</strong>
-        </div>
+        {!compact && (
+          <div className="titlebar-brand">
+            <ArrowLeftRight size={18} />
+            <strong>{title}</strong>
+          </div>
+        )}
         <div className="titlebar-tools">{children}</div>
         <div className="window-controls">
           <button

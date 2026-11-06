@@ -9,7 +9,15 @@ import {
   FileText,
   Folder,
   Search,
+  Filter,
+  FolderOpen,
 } from "lucide-react";
+import {
+  ActionMenu,
+  PopupMenu,
+  ToolButton,
+  ToolbarSlot,
+} from "./WorkspaceControls.jsx";
 import { overviewTree, treeRows } from "../core/tree.mjs";
 import Pagination, { usePagination } from "./Pagination.jsx";
 
@@ -37,10 +45,13 @@ export default function FolderOverview({
   filter = "all",
   onFilter,
   extra,
+  compact = false,
+  toolbarHost,
 }) {
   const [search, setSearch] = useState(""),
     [expanded, setExpanded] = useState(new Set()),
-    [collapsed, setCollapsed] = useState(new Set());
+    [collapsed, setCollapsed] = useState(new Set()),
+    [context, setContext] = useState(null);
   const current = report.folders?.find((f) => f.key === folderKey);
   const crumbs = useMemo(() => {
     const byKey = new Map((report.folders || []).map((f) => [f.key, f])),
@@ -123,45 +134,126 @@ export default function FolderOverview({
   };
   return (
     <div className="folder-overview">
-      <div className="overview-heading">
-        <div>
-          <h2>差分一览</h2>
-          <p>
-            展开文件夹或归档查看内部差分；双击文件打开明细，归档可在新 Tab
-            浏览。
-          </p>
+      {!compact && (
+        <div className="overview-heading">
+          <div>
+            <h2>差分一览</h2>
+            <p>
+              展开文件夹或归档查看内部差分；双击文件打开明细，归档可在新 Tab
+              浏览。
+            </p>
+          </div>
+          {extra}
         </div>
-        {extra}
-      </div>
-      <nav className="folder-breadcrumbs" aria-label="当前文件夹">
-        <button
-          className="icon-button"
-          aria-label="上一级"
+      )}
+      {!compact && (
+        <nav className="folder-breadcrumbs" aria-label="当前文件夹">
+          <button
+            className="icon-button"
+            aria-label="上一级"
+            disabled={!current}
+            onClick={() => navigate(current.parentKey)}
+          >
+            <ArrowUp size={16} />
+          </button>
+          <button onClick={() => navigate(null)}>全部结果</button>
+          {crumbs.map((f) => (
+            <React.Fragment key={f.key}>
+              <ChevronRight size={13} />
+              <button
+                aria-current={f.key === current?.key ? "page" : undefined}
+                title={f.path}
+                onClick={() => navigate(f.key)}
+              >
+                {basename(f.path)}
+              </button>
+            </React.Fragment>
+          ))}
+        </nav>
+      )}
+      {!compact && (
+        <div className="overview-tools">
+          <div className="overview-search">
+            <Search size={15} />
+            <input
+              aria-label="搜索文件"
+              placeholder="搜索全部文件夹或文件路径…"
+              value={search}
+              onChange={(e) => {
+                setSearch(e.target.value);
+                setCollapsed(new Set());
+              }}
+            />
+          </div>
+          <select
+            aria-label="筛选比较条目"
+            value={filter}
+            onChange={(e) => changeFilter(e.target.value)}
+          >
+            <option value="all">全部状态</option>
+            <option value="differences">只看不同</option>
+            {Object.entries(labels).map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
+          </select>
+          <span>
+            {rows.length} 项 · {report.folderSummary?.total || 0} 个文件夹 /
+            归档
+          </span>
+        </div>
+      )}
+      {!compact && (
+        <div className="tree-controls">
+          <button onClick={expandDifferences}>
+            <ListTree size={15} />
+            展开所有差异
+          </button>
+          <button onClick={collapseAll}>
+            <ChevronsDownUp size={14} />
+            收起全部
+          </button>
+          <label>
+            <input
+              type="checkbox"
+              checked={filter === "differences"}
+              onChange={(e) =>
+                changeFilter(e.target.checked ? "differences" : "all")
+              }
+            />
+            隐藏一致项
+          </label>
+          <label>
+            <input
+              type="checkbox"
+              checked={filter === "equal"}
+              onChange={(e) => changeFilter(e.target.checked ? "equal" : "all")}
+            />
+            隐藏差异项
+          </label>
+          <span>红：仅左侧 · 绿：仅右侧 · 橙：内容不同</span>
+        </div>
+      )}
+      <ToolbarSlot host={compact ? toolbarHost : null}>
+        <ToolButton
+          icon={ArrowUp}
+          label="上一级"
           disabled={!current}
           onClick={() => navigate(current.parentKey)}
+        />
+        <button
+          className="workspace-folder-label"
+          title={current?.path || "全部结果"}
+          onClick={() => navigate(null)}
         >
-          <ArrowUp size={16} />
+          {current ? basename(current.path) : "全部结果"}
         </button>
-        <button onClick={() => navigate(null)}>全部结果</button>
-        {crumbs.map((f) => (
-          <React.Fragment key={f.key}>
-            <ChevronRight size={13} />
-            <button
-              aria-current={f.key === current?.key ? "page" : undefined}
-              title={f.path}
-              onClick={() => navigate(f.key)}
-            >
-              {basename(f.path)}
-            </button>
-          </React.Fragment>
-        ))}
-      </nav>
-      <div className="overview-tools">
-        <div className="overview-search">
-          <Search size={15} />
+        <div className="workspace-search">
+          <Search size={14} />
           <input
             aria-label="搜索文件"
-            placeholder="搜索全部文件夹或文件路径…"
+            placeholder="搜索路径…"
             value={search}
             onChange={(e) => {
               setSearch(e.target.value);
@@ -169,52 +261,81 @@ export default function FolderOverview({
             }}
           />
         </div>
-        <select
-          aria-label="筛选比较条目"
-          value={filter}
-          onChange={(e) => changeFilter(e.target.value)}
-        >
-          <option value="all">全部状态</option>
-          <option value="differences">只看不同</option>
-          {Object.entries(labels).map(([value, label]) => (
-            <option key={value} value={value}>
-              {label}
-            </option>
-          ))}
-        </select>
-        <span>
-          {rows.length} 项 · {report.folderSummary?.total || 0} 个文件夹 / 归档
-        </span>
-      </div>
-      <div className="tree-controls">
-        <button onClick={expandDifferences}>
-          <ListTree size={15} />
-          展开所有差异
-        </button>
-        <button onClick={collapseAll}>
-          <ChevronsDownUp size={14} />
-          收起全部
-        </button>
-        <label>
-          <input
-            type="checkbox"
-            checked={filter === "differences"}
-            onChange={(e) =>
-              changeFilter(e.target.checked ? "differences" : "all")
-            }
-          />
-          隐藏一致项
-        </label>
-        <label>
-          <input
-            type="checkbox"
-            checked={filter === "equal"}
-            onChange={(e) => changeFilter(e.target.checked ? "equal" : "all")}
-          />
-          隐藏差异项
-        </label>
-        <span>红：仅左侧 · 绿：仅右侧 · 橙：内容不同</span>
-      </div>
+        <ToolButton
+          icon={ListTree}
+          label="展开所有差异"
+          onClick={expandDifferences}
+        />
+        <ToolButton
+          icon={ChevronsDownUp}
+          label="收起全部"
+          onClick={collapseAll}
+        />
+        <ActionMenu
+          icon={Filter}
+          label="筛选比较条目"
+          active={filter !== "all"}
+          items={[
+            {
+              label: "全部状态",
+              checked: filter === "all",
+              action: () => changeFilter("all"),
+            },
+            {
+              label: "隐藏一致项",
+              checked: filter === "differences",
+              action: () =>
+                changeFilter(filter === "differences" ? "all" : "differences"),
+            },
+            {
+              label: "隐藏差异项",
+              checked: filter === "equal",
+              action: () => changeFilter(filter === "equal" ? "all" : "equal"),
+            },
+            { separator: true },
+            ...Object.entries(labels)
+              .filter(([key]) => key !== "equal")
+              .map(([value, label]) => ({
+                label,
+                checked: filter === value,
+                action: () => changeFilter(value),
+              })),
+          ]}
+        />
+        <span className="workspace-tool-count">{rows.length} 项</span>
+      </ToolbarSlot>
+      {context && (
+        <PopupMenu
+          anchor={context.anchor}
+          label="条目快捷菜单"
+          onClose={() => setContext(null)}
+          items={[
+            {
+              label: context.item.container ? "展开 / 收起" : "查看差分",
+              icon: context.item.container ? Folder : FileText,
+              action: () =>
+                context.item.container
+                  ? toggle(context.item)
+                  : onOpenFile(context.item),
+            },
+            {
+              ...(context.item.container
+                ? {
+                    label:
+                      context.item.type === "archive" && onOpenArchive
+                        ? "在新 Tab 查看归档"
+                        : "仅查看此目录",
+                    icon: FolderOpen,
+                    action: () =>
+                      context.item.type === "archive" && onOpenArchive
+                        ? onOpenArchive(context.item)
+                        : navigate(context.item.key),
+                  }
+                : { separator: true }),
+            },
+          ]}
+        />
+      )}
       {current?.error && (
         <div className="notice error-notice">{current.error}</div>
       )}
@@ -230,7 +351,6 @@ export default function FolderOverview({
             <th>类型</th>
             <th>状态</th>
             <th>内部文件</th>
-            <th>操作</th>
           </tr>
         </thead>
         <tbody>
@@ -272,10 +392,35 @@ export default function FolderOverview({
                       ? e.currentTarget.nextElementSibling
                       : e.currentTarget.previousElementSibling
                     )?.focus();
+                  } else if (
+                    e.key === "ContextMenu" ||
+                    (e.shiftKey && e.key === "F10")
+                  ) {
+                    e.preventDefault();
+                    const rect = e.currentTarget.getBoundingClientRect();
+                    setContext({
+                      item: i,
+                      anchor: {
+                        x: rect.left + 40,
+                        y: rect.top + 20,
+                        focus: e.currentTarget,
+                      },
+                    });
                   } else if (e.key === "Enter") {
                     e.preventDefault();
                     open(i);
                   }
+                }}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  setContext({
+                    item: i,
+                    anchor: {
+                      x: e.clientX,
+                      y: e.clientY,
+                      focus: e.currentTarget,
+                    },
+                  });
                 }}
                 onDoubleClick={() => open(i)}
               >
@@ -319,22 +464,6 @@ export default function FolderOverview({
                   {i.container
                     ? `${i.counts.total} 个 · 差分 ${i.counts.total - i.counts.equal}`
                     : "—"}
-                </td>
-                <td>
-                  <button
-                    className="text-button"
-                    onClick={() =>
-                      i.container && (i.type === "directory" || !onOpenArchive)
-                        ? navigate(i.key)
-                        : open(i)
-                    }
-                  >
-                    {i.container
-                      ? i.type === "archive"
-                        ? "进入归档"
-                        : "打开文件夹"
-                      : "查看差分"}
-                  </button>
                 </td>
               </tr>
             );

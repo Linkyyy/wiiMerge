@@ -29,6 +29,18 @@
     );
     if (document.querySelector(".merge-table"))
       throw new Error("File opened before overview");
+    if (
+      !document.querySelector(".titlebar .document-tabs") ||
+      document.querySelectorAll(".workspace-commandbar").length !== 1 ||
+      document.querySelector(".diff-topbar,.editor-status")
+    )
+      throw new Error("Workspace is not limited to two header rows");
+    if (
+      [...document.querySelectorAll(".overview-table th")].some(
+        (cell) => cell.textContent.trim() === "操作",
+      )
+    )
+      throw new Error("Redundant action column remains");
     if (document.querySelector(".diff-explorer"))
       throw new Error("Redundant file sidebar is still visible");
     const search = async (value) => {
@@ -67,7 +79,9 @@
       );
     };
     if (report.mode === "files" && report.items[0].type === "excel") {
-      document.querySelector(".overview-table tbody button").click();
+      document
+        .querySelector(".overview-table tbody tr")
+        .dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
       await wait(
         () => document.querySelector(".excel-diff"),
         "XLS details missing",
@@ -90,7 +104,9 @@
         "XLS/XLSX cross-format comparison and visual cell navigation",
       );
     } else if (report.mode === "files") {
-      document.querySelector(".overview-table tbody button").click();
+      document
+        .querySelector(".overview-table tbody tr")
+        .dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
       await wait(
         () => document.querySelector(".merge-table"),
         "Text diff window missing",
@@ -109,18 +125,14 @@
       );
       await fullscreen();
       for (let n = 0; n < 2; n++) {
-        [...document.querySelectorAll(".merge-toolbar button")]
-          .find((b) => b.textContent.trim() === "使用左边")
-          .click();
+        document.querySelector('button[aria-label="使用左边"]').click();
         await new Promise((r) => setTimeout(r, 100));
       }
       await wait(
         () => document.querySelector(".editor-equal"),
         "Adopt-left did not resolve hunks",
       );
-      const save = document
-        .querySelectorAll(".editor-sides>div")[1]
-        .querySelector("button");
+      const save = document.querySelector('button[aria-label="保存右侧"]');
       if (save.disabled) throw new Error("Merged right side not dirty");
       save.click();
       await wait(
@@ -134,25 +146,25 @@
         "independent frameless window, hunk navigation, adopt-left and saved merge",
       );
     } else {
-      [...document.querySelectorAll(".tree-controls button")]
-        .find((b) => b.textContent.includes("展开所有差异"))
-        .click();
+      document.querySelector('button[aria-label="展开所有差异"]').click();
       await wait(
         () =>
           document.querySelectorAll('tr[data-object-type="text"]').length >= 2,
         "Expand all differences did not reveal nested JAR files",
       );
-      const hideEqual = [
-        ...document.querySelectorAll(".tree-controls label"),
-      ].find((label) => label.textContent.includes("隐藏一致项"));
-      hideEqual.querySelector("input").click();
+      document.querySelector('button[aria-label="筛选比较条目"]').click();
+      await wait(
+        () => document.querySelector('[role="menu"]'),
+        "Filter menu missing",
+      );
+      [...document.querySelectorAll('[role="menuitemcheckbox"]')]
+        .find((button) => button.textContent.trim() === "隐藏一致项")
+        .click();
       await wait(
         () => !document.querySelector('tr[data-object-path="same.txt"]'),
         "Equal file is not hidden",
       );
-      [...document.querySelectorAll(".tree-controls button")]
-        .find((b) => b.textContent.includes("收起全部"))
-        .click();
+      document.querySelector('button[aria-label="收起全部"]').click();
       await wait(
         () =>
           document.querySelectorAll('tr[data-object-type="text"]').length === 0,
@@ -168,11 +180,11 @@
         "Archive Tab missing",
       );
       await search("app.txt");
-      const open = [...document.querySelectorAll(".overview-table tr")]
-        .find((r) => r.textContent.includes("app.txt"))
-        ?.querySelector("button");
+      const open = [...document.querySelectorAll(".overview-table tr")].find(
+        (r) => r.textContent.includes("app.txt"),
+      );
       if (!open) throw new Error("Nested JAR file missing");
-      open.click();
+      open.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
       await wait(
         () => document.querySelector(".merge-table"),
         "Nested entry diff missing",
@@ -201,7 +213,7 @@
           row.textContent.includes("同名#2"),
       );
       if (!duplicate) throw new Error("Duplicate JAR version missing");
-      duplicate.querySelector("button").click();
+      duplicate.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
       await wait(
         () =>
           document
@@ -212,11 +224,21 @@
             ?.textContent.includes("after-second"),
         "Duplicate JAR opened the wrong occurrence",
       );
+      document.querySelector('button[aria-label="归档提示"]').click();
+      await wait(
+        () => document.querySelector(".archive-warnings"),
+        "Archive notice panel missing",
+      );
       if (!document.querySelector(".archive-warnings"))
         throw new Error("Duplicate notice missing");
       for (const text of ["HTML 报告", "Excel 报告"]) {
-        [...document.querySelectorAll(".diff-topbar button")]
-          .find((b) => b.textContent.trim() === text)
+        document.querySelector('button[aria-label="导出报告"]').click();
+        await wait(
+          () => document.querySelector('[role="menu"]'),
+          "Export menu missing",
+        );
+        [...document.querySelectorAll('[role="menuitem"]')]
+          .find((button) => button.textContent.trim() === text)
           .click();
         await wait(
           () =>

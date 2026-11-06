@@ -181,14 +181,14 @@ try {
   await diff
     .locator('.overview-table tbody tr[data-object-type="text"]')
     .filter({ hasText: "同名#2" })
-    .getByRole("button", { name: "查看差分", exact: true })
-    .click();
+    .dblclick();
   await diff.locator(".merge-table").waitFor();
   await expect(diff.locator(".merge-table")).toContainText("before");
   await expect(diff.locator(".merge-table")).toContainText("after");
   await diff.getByRole("button", { name: "使用左边", exact: true }).click();
   await expect(diff.locator(".editor-equal")).toBeVisible();
-  await diff.getByRole("button", { name: "HTML 报告", exact: true }).click();
+  await diff.getByRole("button", { name: "导出报告", exact: true }).click();
+  await diff.getByRole("menuitem", { name: "HTML 报告", exact: true }).click();
   await expect(diff.getByRole("status")).toContainText("已导出");
   const html = await fs.readFile(exportPath, "utf8");
   if (

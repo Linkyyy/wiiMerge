@@ -44,6 +44,7 @@ import { diffChars } from "diff";
 import { DEFAULT_RULES } from "../core/defaults.mjs";
 
 import Titlebar from "./Titlebar.jsx";
+import { ToolButton, ToolbarSlot } from "./WorkspaceControls.jsx";
 import FolderOverview from "./FolderOverview.jsx";
 import DiffMap from "./DiffMap.jsx";
 import ArchiveWarnings from "./ArchiveWarnings.jsx";
@@ -775,7 +776,13 @@ export function CharacterDiff({ left, right, side }) {
     ));
 }
 
-export function Detail({ item }) {
+export function Detail({
+  item,
+  compact = false,
+  toolbarHost,
+  showNavigation = true,
+  showTextNavigation = false,
+}) {
   const d = item.details;
   const [diffOnly, setDiffOnly] = useState(false),
     [wrap, setWrap] = useState(true),
@@ -853,64 +860,111 @@ export function Detail({ item }) {
   }, [d, changes, cursor]);
   return (
     <>
-      <div className="detail-header">
-        <div className="detail-filename">
-          <FileIcon type={item.type} size={17} />
-          <strong title={item.path}>{item.path}</strong>
-          <span className={`status-pill ${item.status}`}>
-            {LABELS[item.status]}
-          </span>
-        </div>
-        <div className="detail-tools">
-          {d?.kind === "text" && (
-            <>
-              <label className="check-inline">
-                <input
-                  type="checkbox"
-                  checked={diffOnly}
-                  onChange={(e) => {
-                    setDiffOnly(e.target.checked);
-                    setCursor(-1);
-                    setLimit(500);
-                  }}
+      <ToolbarSlot host={compact ? toolbarHost : null}>
+        {(d?.kind === "excel" || d?.kind === "text") && (
+          <>
+            <ToolButton
+              icon={ArrowUp}
+              label="上一处差异"
+              shortcut="Shift+F7"
+              disabled={!changes.length}
+              onClick={() => jump(-1)}
+            />
+            <ToolButton
+              icon={ArrowDown}
+              label="下一处差异"
+              shortcut="F7"
+              disabled={!changes.length}
+              onClick={() => jump(1)}
+            />
+            <span className="workspace-tool-count">
+              {cursor < 0 ? 0 : cursor + 1} / {changes.length}
+            </span>
+          </>
+        )}
+        {d?.kind === "excel" && (
+          <select
+            className="workspace-sheet-select"
+            aria-label="工作表"
+            value={sheet}
+            onChange={(e) => {
+              setSheet(e.target.value);
+              setCursor(-1);
+              setLimit(500);
+            }}
+          >
+            <option value="all">全部工作表</option>
+            {d.sheets.map((s) => (
+              <option key={s.name} value={s.name}>
+                {s.name} · {LABELS[s.status]}
+              </option>
+            ))}
+          </select>
+        )}
+      </ToolbarSlot>
+      {!compact && (
+        <div className="detail-header">
+          <div className="detail-filename">
+            <FileIcon type={item.type} size={17} />
+            <strong title={item.path}>{item.path}</strong>
+            <span className={`status-pill ${item.status}`}>
+              {LABELS[item.status]}
+            </span>
+          </div>
+          <div className="detail-tools">
+            {d?.kind === "text" && (
+              <>
+                <label className="check-inline">
+                  <input
+                    type="checkbox"
+                    checked={diffOnly}
+                    onChange={(e) => {
+                      setDiffOnly(e.target.checked);
+                      setCursor(-1);
+                      setLimit(500);
+                    }}
+                  />
+                  只看差异
+                </label>
+                <IconButton
+                  icon={WrapText}
+                  title="切换自动换行"
+                  className={`icon-button ${wrap ? "is-active" : ""}`}
+                  onClick={() => setWrap((v) => !v)}
                 />
-                只看差异
-              </label>
-              <IconButton
-                icon={WrapText}
-                title="切换自动换行"
-                className={`icon-button ${wrap ? "is-active" : ""}`}
-                onClick={() => setWrap((v) => !v)}
-              />
-            </>
-          )}
-          {(d?.kind === "text" || d?.kind === "excel") && (
-            <>
-              <span className="tool-divider" />
-              <span className="diff-position">
-                {cursor < 0 ? 0 : cursor + 1} / {changes.length}
-              </span>
-              <IconButton
-                icon={ArrowUp}
-                title="上一处差异"
-                disabled={!changes.length}
-                onClick={() => jump(-1)}
-              />
-              <IconButton
-                icon={ArrowDown}
-                title="下一处差异"
-                disabled={!changes.length}
-                onClick={() => jump(1)}
-              />
-            </>
-          )}
-        </div>
-      </div>
-      {item.leftPath !== item.rightPath && item.leftPath && item.rightPath && (
-        <div className="match-note">
-          路径匹配：{item.leftPath} <ArrowRight size={12} /> {item.rightPath}
+              </>
+            )}
+            {(d?.kind === "text" || d?.kind === "excel") && (
+              <>
+                <span className="tool-divider" />
+                <span className="diff-position">
+                  {cursor < 0 ? 0 : cursor + 1} / {changes.length}
+                </span>
+                <IconButton
+                  icon={ArrowUp}
+                  title="上一处差异"
+                  disabled={!changes.length}
+                  onClick={() => jump(-1)}
+                />
+                <IconButton
+                  icon={ArrowDown}
+                  title="下一处差异"
+                  disabled={!changes.length}
+                  onClick={() => jump(1)}
+                />
+              </>
+            )}
+          </div>
         </div>
       )}
+      {!compact &&
+        item.leftPath !== item.rightPath &&
+        item.leftPath &&
+        item.rightPath && (
+          <div className="match-note">
+            路径匹配：{item.leftPath} <ArrowRight size={12} /> {item.rightPath}
+          </div>
+        )}
       {d?.truncated && (
         <div className="inline-warning">
           <CircleAlert size={14} />
@@ -919,7 +973,7 @@ export function Detail({ item }) {
             : "明细超过 12,000 条，已截断；统计总数仍包含完整输入。"}
         </div>
       )}
-      {d?.kind === "excel" && (
+      {!compact && d?.kind === "excel" && (
         <div className="sheet-tabs">
           <button
             className={sheet === "all" ? "active" : ""}
@@ -949,9 +1003,9 @@ export function Detail({ item }) {
           ))}
         </div>
       )}
-      <ArchiveWarnings warnings={item.warnings} entry />
+      {!compact && <ArchiveWarnings warnings={item.warnings} entry />}
       <div className="detail-with-map">
-        {d?.kind === "excel" && (
+        {showNavigation && d?.kind === "excel" && (
           <aside className="hunk-navigation excel-navigation">
             <b>
               差分导航 <span>{rows.length}</span>
@@ -962,7 +1016,7 @@ export function Detail({ item }) {
               onJump={selectRow}
               viewport={viewport}
             />
-            <details className="text-navigation">
+            <details className="text-navigation" hidden={!showTextNavigation}>
               <summary>文本导航</summary>
               {rows.slice(0, limit).map((c, i) => (
                 <button
@@ -1165,31 +1219,33 @@ export function Detail({ item }) {
           )}
         </div>
       </div>
-      <div className="detail-footer">
-        <div>
-          <span className="legend removed">
-            <i />
-            左侧移除
-          </span>
-          <span className="legend added">
-            <i />
-            右侧新增
-          </span>
-          <span className="legend changed">
-            <i />
-            内容修改
+      {!compact && (
+        <div className="detail-footer">
+          <div>
+            <span className="legend removed">
+              <i />
+              左侧移除
+            </span>
+            <span className="legend added">
+              <i />
+              右侧新增
+            </span>
+            <span className="legend changed">
+              <i />
+              内容修改
+            </span>
+          </div>
+          <span>
+            {d?.kind === "excel"
+              ? `${d.keyed ? "主键行匹配" : "按单元格位置"} · ${d.totalChanges} 个单元格差异 · 不比较样式`
+              : d?.kind === "text"
+                ? `${d.counts.changed + d.counts.added + d.counts.removed} 行差异 · 统一换行符`
+                : d?.kind === "directory"
+                  ? "空目录 · 路径匹配"
+                  : "SHA-256 · 原始字节比较"}
           </span>
         </div>
-        <span>
-          {d?.kind === "excel"
-            ? `${d.keyed ? "主键行匹配" : "按单元格位置"} · ${d.totalChanges} 个单元格差异 · 不比较样式`
-            : d?.kind === "text"
-              ? `${d.counts.changed + d.counts.added + d.counts.removed} 行差异 · 统一换行符`
-              : d?.kind === "directory"
-                ? "空目录 · 路径匹配"
-                : "SHA-256 · 原始字节比较"}
-        </span>
-      </div>
+      )}
     </>
   );
 }

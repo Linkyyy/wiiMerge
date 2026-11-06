@@ -140,9 +140,10 @@ function MapCanvas({
         <button
           className="map-expand"
           onClick={onExpand}
+          aria-label="放大差分导航"
           title="放大全屏（也可双击导航栏）"
         >
-          <Maximize2 size={12} /> 放大导航
+          <Maximize2 size={13} />
         </button>
       )}
     </div>
