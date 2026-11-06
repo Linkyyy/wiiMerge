@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 
 export default function useDiffViewport(
   ref,
-  { selector, attribute, positionAt, leftTotal, rightTotal, version },
+  { selector, attribute, positionAt, leftTotal, rightTotal, mapTotal, version },
 ) {
   const [viewport, setViewport] = useState();
   useEffect(() => {
@@ -47,6 +47,16 @@ export default function useDiffViewport(
         );
       if (!first || !last) return;
       setViewport({
+        map:
+          mapTotal && first.mapStart != null && last.mapStart != null
+            ? {
+                start:
+                  Math.min(first.mapStart, last.mapStart) /
+                  Math.max(1, mapTotal),
+                end:
+                  Math.max(first.mapEnd, last.mapEnd) / Math.max(1, mapTotal),
+              }
+            : undefined,
         left: {
           start: first.leftStart / Math.max(1, leftTotal),
           end: last.leftEnd / Math.max(1, leftTotal),
@@ -69,6 +79,15 @@ export default function useDiffViewport(
       element.removeEventListener("scroll", schedule);
       if (frame != null) cancelAnimationFrame(frame);
     };
-  }, [ref, selector, attribute, positionAt, leftTotal, rightTotal, version]);
+  }, [
+    ref,
+    selector,
+    attribute,
+    positionAt,
+    leftTotal,
+    rightTotal,
+    mapTotal,
+    version,
+  ]);
   return viewport;
 }

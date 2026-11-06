@@ -1,10 +1,14 @@
 export function textNavigation(model) {
   return {
+    mapTotal: Math.max(1, model.rows?.length || 0),
+    mapLabel: "对齐行",
     leftTotal: Math.max(1, model.leftLines || 0),
     rightTotal: Math.max(1, model.rightLines || 0),
     ranges: model.hunks.map((h, index) => ({
       ...h,
       index,
+      mapStart: h.row,
+      mapEnd: h.endRow,
       status:
         h.leftEnd === h.leftStart
           ? "added"
@@ -18,22 +22,38 @@ export function textNavigation(model) {
 export function excelNavigation(details, rows, selectedSheet = "all") {
   const offsets = new Map();
   let leftTotal = 0,
-    rightTotal = 0;
+    rightTotal = 0,
+    mapTotal = 0;
   for (const sheet of details.sheets) {
     if (selectedSheet !== "all" && sheet.name !== selectedSheet) continue;
-    offsets.set(sheet.name, { left: leftTotal, right: rightTotal });
+    offsets.set(sheet.name, {
+      left: leftTotal,
+      right: rightTotal,
+      map: mapTotal,
+    });
     leftTotal += Math.max(1, sheet.leftMaxRow ?? sheet.leftRows);
     rightTotal += Math.max(1, sheet.rightMaxRow ?? sheet.rightRows);
+    mapTotal += Math.max(
+      1,
+      sheet.leftMaxRow ?? sheet.leftRows,
+      sheet.rightMaxRow ?? sheet.rightRows,
+    );
   }
   return {
+    mapTotal: Math.max(1, mapTotal),
+    mapLabel: "行位置",
     leftTotal: Math.max(1, leftTotal),
     rightTotal: Math.max(1, rightTotal),
     ranges: rows.map((c, index) => {
-      const offset = offsets.get(c.sheet) || { left: 0, right: 0 };
+      const offset = offsets.get(c.sheet) || { left: 0, right: 0, map: 0 };
       const leftStart = offset.left + Math.max(0, (c.leftRow || 1) - 1),
         rightStart = offset.right + Math.max(0, (c.rightRow || 1) - 1);
+      const mapStart =
+        offset.map + Math.max(1, c.leftRow || 0, c.rightRow || 0) - 1;
       return {
         index,
+        mapStart,
+        mapEnd: mapStart + 1,
         status: c.status,
         leftStart,
         leftEnd: leftStart + (c.leftRow ? 1 : 0),

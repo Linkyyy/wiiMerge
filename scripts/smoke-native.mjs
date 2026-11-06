@@ -179,7 +179,7 @@ try {
     .getByRole("textbox", { name: "搜索文件", exact: true })
     .fill("app.txt");
   await diff
-    .locator(".overview-table tbody tr")
+    .locator('.overview-table tbody tr[data-object-type="text"]')
     .filter({ hasText: "同名#2" })
     .getByRole("button", { name: "查看差分", exact: true })
     .click();

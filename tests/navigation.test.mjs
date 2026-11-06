@@ -63,3 +63,56 @@ test("Excel navigation uses original row numbers and per-sheet offsets after key
   assert.equal(one.ranges[0].leftStart, 1799);
   assert.equal(one.rightTotal, 3000);
 });
+
+test("one text navigation axis uses aligned rows after insertions and distinguishes left-only/right-only blocks", () => {
+  const nav = textNavigation(
+    textModel(
+      "start\nleft-only\nanchor\nold\nend",
+      "start\nanchor\nnew\nextra\nend",
+    ),
+  );
+  assert.equal(nav.mapTotal, 6);
+  assert.ok(nav.ranges.some((r) => r.status === "removed"));
+  assert.ok(nav.ranges.some((r) => r.status === "changed"));
+  for (const range of nav.ranges) {
+    assert.equal(range.mapStart, range.row);
+    assert.equal(range.mapEnd, range.endRow);
+  }
+  const insertion = textNavigation(
+    textModel("first\nlast", "first\nright-only\nlast"),
+  );
+  assert.equal(insertion.ranges[0].status, "added");
+  assert.equal(insertion.ranges[0].mapStart, 1);
+  assert.equal(insertion.ranges[0].mapEnd, 2);
+  assert.equal(
+    nearestDifference(nav.ranges, "map", 1, nav.mapTotal),
+    nav.ranges.length - 1,
+  );
+});
+test("one Excel axis preserves late one-sided cells and worksheet offsets with different side lengths", () => {
+  const d = {
+    sheets: [
+      { name: "A", leftMaxRow: 2000, rightMaxRow: 3000 },
+      { name: "B", leftMaxRow: 100, rightMaxRow: 50 },
+    ],
+  };
+  const rows = [
+    {
+      sheet: "A",
+      column: "A",
+      leftRow: 1900,
+      rightRow: null,
+      status: "removed",
+    },
+    { sheet: "A", column: "B", leftRow: null, rightRow: 2900, status: "added" },
+    { sheet: "B", column: "A", leftRow: 90, rightRow: 40, status: "changed" },
+  ];
+  const nav = excelNavigation(d, rows);
+  assert.equal(nav.mapTotal, 3100);
+  assert.deepEqual(
+    nav.ranges.map((r) => r.mapStart),
+    [1899, 2899, 3089],
+  );
+  assert.equal(nearestDifference(nav.ranges, "map", 0.95, nav.mapTotal), 1);
+  assert.equal(nearestDifference(nav.ranges, "map", 1, nav.mapTotal), 2);
+});

@@ -369,6 +369,8 @@ function TextEditor({ doc, change, save, busy, warnings }) {
       const row = model.rows[index];
       return (
         row && {
+          mapStart: index,
+          mapEnd: index + 1,
           leftStart: row.leftOffset,
           leftEnd: row.leftOffset + (row.leftLine ? 1 : 0),
           rightStart: row.rightOffset,
@@ -384,6 +386,7 @@ function TextEditor({ doc, change, save, busy, warnings }) {
     positionAt,
     leftTotal: navigation.leftTotal,
     rightTotal: navigation.rightTotal,
+    mapTotal: navigation.mapTotal,
     version: `${limit}:${editing}`,
   });
   const current = Math.min(cursor, Math.max(model.hunks.length - 1, 0));

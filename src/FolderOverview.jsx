@@ -3,11 +3,14 @@ import {
   Archive,
   ArrowUp,
   ChevronRight,
+  ChevronDown,
+  ChevronsDownUp,
+  ListTree,
   FileText,
   Folder,
   Search,
 } from "lucide-react";
-import { overviewObjects } from "../core/folders.mjs";
+import { overviewTree, treeRows } from "../core/tree.mjs";
 import Pagination, { usePagination } from "./Pagination.jsx";
 
 const labels = {
@@ -35,7 +38,9 @@ export default function FolderOverview({
   onFilter,
   extra,
 }) {
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState(""),
+    [expanded, setExpanded] = useState(new Set()),
+    [collapsed, setCollapsed] = useState(new Set());
   const current = report.folders?.find((f) => f.key === folderKey);
   const crumbs = useMemo(() => {
     const byKey = new Map((report.folders || []).map((f) => [f.key, f])),
@@ -49,36 +54,58 @@ export default function FolderOverview({
     }
     return result;
   }, [report.folders, folderKey]);
-  const objects = useMemo(() => overviewObjects(report), [report]);
-  const rows = useMemo(() => {
-    const accepts = (i) =>
-      filter === "all" ||
-      (filter === "differences" ? i.status !== "equal" : i.status === filter);
-    // Keep ancestor folders reachable when filtering for a descendant's status.
-    const accepted = new Set(),
-      byKey = new Map(objects.map((i) => [i.key, i]));
-    for (const item of objects) {
-      if (!accepts(item)) continue;
-      let object = item;
-      while (object && !accepted.has(object.key)) {
-        accepted.add(object.key);
-        object = byKey.get(object.parentKey);
-      }
-    }
-    return objects
-      .filter((i) =>
-        search.trim()
-          ? i.path.toLowerCase().includes(search.trim().toLowerCase()) &&
-            accepts(i)
-          : (i.parentKey || null) === (current?.key || null) &&
-            accepted.has(i.key),
-      )
-      .sort(
-        (a, b) =>
-          Number(b.container || false) - Number(a.container || false) ||
-          a.path.localeCompare(b.path, "zh-CN", { numeric: true }),
-      );
-  }, [objects, current, filter, search]);
+  const tree = useMemo(
+    () =>
+      overviewTree(report, { filter, search, folderKey: current?.key || null }),
+    [report, current, filter, search],
+  );
+  const effectiveExpanded = useMemo(
+    () =>
+      new Set(
+        [...expanded, ...tree.autoExpanded].filter(
+          (key) => !collapsed.has(key),
+        ),
+      ),
+    [expanded, collapsed, tree],
+  );
+  const rows = useMemo(
+    () => treeRows(tree, effectiveExpanded),
+    [tree, effectiveExpanded],
+  );
+  const toggle = (item, value = !effectiveExpanded.has(item.key)) => {
+    setExpanded((previous) => {
+      const next = new Set(previous);
+      value ? next.add(item.key) : next.delete(item.key);
+      return next;
+    });
+    setCollapsed((previous) => {
+      const next = new Set(previous);
+      value ? next.delete(item.key) : next.add(item.key);
+      return next;
+    });
+  };
+  const expandDifferences = () => {
+    setSearch("");
+    if (filter === "equal") onFilter?.("all");
+    setExpanded(
+      new Set(
+        [...tree.byKey.values()]
+          .filter((i) => i.container && i.status !== "equal")
+          .map((i) => i.key),
+      ),
+    );
+    setCollapsed(new Set());
+    pages.go(0);
+  };
+  const collapseAll = () => {
+    setExpanded(new Set());
+    setCollapsed(new Set(report.folders?.map((f) => f.key)));
+    pages.go(0);
+  };
+  const changeFilter = (value) => {
+    setCollapsed(new Set());
+    onFilter?.(value);
+  };
   const pages = usePagination(
     rows,
     JSON.stringify([report.id, folderKey, search, filter]),
@@ -92,7 +119,7 @@ export default function FolderOverview({
     else if (item.type === "archive" && onOpenArchive) {
       setSearch("");
       onOpenArchive(item);
-    } else navigate(item.key);
+    } else toggle(item);
   };
   return (
     <div className="folder-overview">
@@ -100,7 +127,8 @@ export default function FolderOverview({
         <div>
           <h2>差分一览</h2>
           <p>
-            文件夹状态汇总内部差分；双击文件夹或归档进入，打开文件查看具体差分。
+            展开文件夹或归档查看内部差分；双击文件打开明细，归档可在新 Tab
+            浏览。
           </p>
         </div>
         {extra}
@@ -135,13 +163,16 @@ export default function FolderOverview({
             aria-label="搜索文件"
             placeholder="搜索全部文件夹或文件路径…"
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setCollapsed(new Set());
+            }}
           />
         </div>
         <select
           aria-label="筛选比较条目"
           value={filter}
-          onChange={(e) => onFilter?.(e.target.value)}
+          onChange={(e) => changeFilter(e.target.value)}
         >
           <option value="all">全部状态</option>
           <option value="differences">只看不同</option>
@@ -155,11 +186,44 @@ export default function FolderOverview({
           {rows.length} 项 · {report.folderSummary?.total || 0} 个文件夹 / 归档
         </span>
       </div>
+      <div className="tree-controls">
+        <button onClick={expandDifferences}>
+          <ListTree size={15} />
+          展开所有差异
+        </button>
+        <button onClick={collapseAll}>
+          <ChevronsDownUp size={14} />
+          收起全部
+        </button>
+        <label>
+          <input
+            type="checkbox"
+            checked={filter === "differences"}
+            onChange={(e) =>
+              changeFilter(e.target.checked ? "differences" : "all")
+            }
+          />
+          隐藏一致项
+        </label>
+        <label>
+          <input
+            type="checkbox"
+            checked={filter === "equal"}
+            onChange={(e) => changeFilter(e.target.checked ? "equal" : "all")}
+          />
+          隐藏差异项
+        </label>
+        <span>红：仅左侧 · 绿：仅右侧 · 橙：内容不同</span>
+      </div>
       {current?.error && (
         <div className="notice error-notice">{current.error}</div>
       )}
       <Pagination paging={pages} label="差分一览分页" />
-      <table className="overview-table">
+      <table
+        className="overview-table"
+        role="treegrid"
+        aria-label="文件夹与文件差分树"
+      >
         <thead>
           <tr>
             <th>名称 / 路径</th>
@@ -170,7 +234,7 @@ export default function FolderOverview({
           </tr>
         </thead>
         <tbody>
-          {pages.rows.map((i) => {
+          {pages.rows.map(({ item: i, level }) => {
             const Icon =
               i.type === "archive" ? Archive : i.container ? Folder : FileText;
             return (
@@ -178,15 +242,71 @@ export default function FolderOverview({
                 key={i.key}
                 data-object-key={i.key}
                 data-object-type={i.type}
+                data-object-path={i.path}
+                aria-level={level + 1}
+                aria-expanded={
+                  i.container ? effectiveExpanded.has(i.key) : undefined
+                }
+                tabIndex={0}
+                className={tree.matches.has(i.key) ? "" : "tree-context"}
+                onKeyDown={(e) => {
+                  if (e.target !== e.currentTarget) return;
+                  if (e.key === "ArrowRight" && i.container) {
+                    e.preventDefault();
+                    toggle(i, true);
+                  } else if (e.key === "ArrowLeft") {
+                    e.preventDefault();
+                    if (i.container && effectiveExpanded.has(i.key))
+                      toggle(i, false);
+                    else
+                      [
+                        ...e.currentTarget
+                          .closest("table")
+                          .querySelectorAll("[data-object-key]"),
+                      ]
+                        .find((row) => row.dataset.objectKey === i.parentKey)
+                        ?.focus();
+                  } else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+                    e.preventDefault();
+                    (e.key === "ArrowDown"
+                      ? e.currentTarget.nextElementSibling
+                      : e.currentTarget.previousElementSibling
+                    )?.focus();
+                  } else if (e.key === "Enter") {
+                    e.preventDefault();
+                    open(i);
+                  }
+                }}
                 onDoubleClick={() => open(i)}
               >
                 <td>
                   <span
                     className={`overview-name ${i.container ? "container-name" : ""}`}
                     title={i.path}
+                    style={{ paddingLeft: level * 22 }}
                   >
+                    {i.container ? (
+                      <button
+                        className="tree-toggle"
+                        aria-label={`${effectiveExpanded.has(i.key) ? "收起" : "展开"} ${basename(i.path)}`}
+                        aria-expanded={effectiveExpanded.has(i.key)}
+                        onClick={() => toggle(i)}
+                        onDoubleClick={(e) => e.stopPropagation()}
+                      >
+                        {effectiveExpanded.has(i.key) ? (
+                          <ChevronDown size={14} />
+                        ) : (
+                          <ChevronRight size={14} />
+                        )}
+                      </button>
+                    ) : (
+                      <span className="tree-toggle-spacer" />
+                    )}
                     <Icon size={17} />
-                    {search.trim() ? i.path : basename(i.path)}
+                    <span className="tree-entry-name">
+                      {basename(i.path)}
+                      {search.trim() && !i.container && <small>{i.path}</small>}
+                    </span>
                   </span>
                 </td>
                 <td>{types[i.type] || i.type}</td>
@@ -201,7 +321,14 @@ export default function FolderOverview({
                     : "—"}
                 </td>
                 <td>
-                  <button className="text-button" onClick={() => open(i)}>
+                  <button
+                    className="text-button"
+                    onClick={() =>
+                      i.container && (i.type === "directory" || !onOpenArchive)
+                        ? navigate(i.key)
+                        : open(i)
+                    }
+                  >
                     {i.container
                       ? i.type === "archive"
                         ? "进入归档"

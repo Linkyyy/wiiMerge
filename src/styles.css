@@ -3170,3 +3170,85 @@ kbd {
   padding: 12px 0;
   font-size: 11px;
 }
+
+.tree-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: 0 0 14px;
+  font-size: 11px;
+  color: #7b8fae;
+}
+.tree-controls button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: 5px;
+  background: #eff4fc;
+  color: #637fae;
+  font-size: 11px;
+}
+.tree-controls label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+}
+.tree-controls input {
+  accent-color: #6078cf;
+}
+.tree-controls > span {
+  font-size: 10px;
+  color: #9aa9c0;
+  margin-left: auto;
+}
+.overview-table .tree-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 22px;
+  flex-shrink: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  border-radius: 4px;
+}
+.tree-toggle:hover {
+  background: #e8effc;
+}
+.tree-toggle-spacer {
+  display: inline-block;
+  width: 20px;
+  flex-shrink: 0;
+}
+.tree-entry-name {
+  min-width: 0;
+}
+.tree-entry-name small {
+  display: block;
+  margin-top: 3px;
+  color: #9aa9bf;
+  font-size: 9px;
+  font-weight: 400;
+  overflow-wrap: anywhere;
+}
+.overview-table tr.tree-context > td {
+  background: #fafcff;
+}
+.overview-table tbody tr:focus-visible {
+  outline: 2px solid #9eb0e9;
+  outline-offset: -2px;
+}
+.map-track.map-unified {
+  left: 0;
+  right: 0;
+  width: 100%;
+}
+.map-legend {
+  flex-wrap: wrap;
+  gap: 5px;
+}

@@ -816,6 +816,7 @@ export function Detail({ item }) {
     positionAt,
     leftTotal: navigation.leftTotal,
     rightTotal: navigation.rightTotal,
+    mapTotal: navigation.mapTotal,
     version: limit,
   });
   const selectRow = (rowIndex) => {

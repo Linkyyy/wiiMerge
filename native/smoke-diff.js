@@ -50,7 +50,7 @@
         () => document.querySelector(".map-fullscreen"),
         "Fullscreen navigation missing",
       );
-      const slider = document.querySelector(".map-fullscreen .map-right");
+      const slider = document.querySelector(".map-fullscreen .map-unified");
       slider.dispatchEvent(
         new KeyboardEvent("keydown", { key: "End", bubbles: true }),
       );
@@ -72,8 +72,9 @@
         () => document.querySelector(".excel-diff"),
         "XLS details missing",
       );
-      const slider = document.querySelector(".map-track.map-right");
-      if (!slider) throw new Error("Excel visual navigation missing");
+      const slider = document.querySelector(".map-track.map-unified");
+      if (!slider || document.querySelectorAll(".map-track").length !== 1)
+        throw new Error("Excel must have one visual navigation track");
       slider.dispatchEvent(
         new KeyboardEvent("keydown", { key: "End", bubbles: true }),
       );
@@ -96,8 +97,9 @@
       );
       if (document.querySelector(".diff-map")?.dataset.differenceCount !== "2")
         throw new Error("Expected two navigation hunks");
-      const slider = document.querySelector(".map-track.map-right");
-      if (!slider) throw new Error("Text visual navigation missing");
+      const slider = document.querySelector(".map-track.map-unified");
+      if (!slider || document.querySelectorAll(".map-track").length !== 1)
+        throw new Error("Text must have one visual navigation track");
       slider.dispatchEvent(
         new KeyboardEvent("keydown", { key: "End", bubbles: true }),
       );
@@ -132,6 +134,30 @@
         "independent frameless window, hunk navigation, adopt-left and saved merge",
       );
     } else {
+      [...document.querySelectorAll(".tree-controls button")]
+        .find((b) => b.textContent.includes("展开所有差异"))
+        .click();
+      await wait(
+        () =>
+          document.querySelectorAll('tr[data-object-type="text"]').length >= 2,
+        "Expand all differences did not reveal nested JAR files",
+      );
+      const hideEqual = [
+        ...document.querySelectorAll(".tree-controls label"),
+      ].find((label) => label.textContent.includes("隐藏一致项"));
+      hideEqual.querySelector("input").click();
+      await wait(
+        () => !document.querySelector('tr[data-object-path="same.txt"]'),
+        "Equal file is not hidden",
+      );
+      [...document.querySelectorAll(".tree-controls button")]
+        .find((b) => b.textContent.includes("收起全部"))
+        .click();
+      await wait(
+        () =>
+          document.querySelectorAll('tr[data-object-type="text"]').length === 0,
+        "Collapse all did not hide nested files",
+      );
       const archive = [
         ...document.querySelectorAll(".overview-table tbody tr"),
       ].find((r) => r.textContent.includes("app.war"));
@@ -169,7 +195,11 @@
       await search("app.txt");
       const duplicate = [
         ...document.querySelectorAll(".overview-table tbody tr"),
-      ].find((row) => row.textContent.includes("同名#2"));
+      ].find(
+        (row) =>
+          row.dataset.objectType === "text" &&
+          row.textContent.includes("同名#2"),
+      );
       if (!duplicate) throw new Error("Duplicate JAR version missing");
       duplicate.querySelector("button").click();
       await wait(
