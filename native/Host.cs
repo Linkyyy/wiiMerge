@@ -61,18 +61,20 @@ namespace WiiMerge {
       base.OnLocationChanged(e);
       if (recordingMoves && testMoves != null) testMoves.Add(Location);
     }
-    async Task<object> TestWindowDrag() {
+    async Task<object> TestWindowDrag(bool resize = false) {
       if (fixtureFile == null && sharedOwner?.fixtureFile == null) throw new Exception("测试接口未启用。");
       WindowState = FormWindowState.Normal;
       var original = Bounds;
+      var originalMinimum = MinimumSize;
       var work = Screen.FromHandle(Handle).WorkingArea;
       try {
+        MinimumSize = new Size(Math.Min(MinimumSize.Width, Math.Max(200, work.Width - 120)), Math.Min(MinimumSize.Height, Math.Max(160, work.Height - 120)));
         Size = new Size(Math.Min(Width, work.Width - 120), Math.Min(Height, work.Height - 120));
         Location = new Point(work.Left + 50, work.Top + 50);
         BringToFront(); Activate();
         await Task.Delay(150);
         var before = Bounds;
-        int startX = Left + Width / 2, startY = Top + 20, requests = testDragRequests;
+        int startX = resize ? Right - 3 : Left + Width / 2, startY = resize ? Bottom - 3 : Top + 20, requests = testDragRequests;
         testMoves.Clear(); testSizes.Clear(); testNativeMoveStarted = false; recordingMoves = true;
         await Task.Run(async () => {
           SetCursorPos(startX, startY);
@@ -92,13 +94,14 @@ namespace WiiMerge {
           after = new { x = after.X, y = after.Y, width = after.Width, height = after.Height },
           settled = new { x = settled.X, y = settled.Y, width = settled.Width, height = settled.Height },
           dragRequests = testDragRequests - requests,
+          mouseStart = new { x = startX, y = startY },
           started = testNativeMoveStarted,
           nativeStart = new { x = testNativeMoveStart.X, y = testNativeMoveStart.Y },
           mouseEnd = new { x = Cursor.Position.X, y = Cursor.Position.Y },
           resizes = testSizes.Count,
           moves = testMoves.Select(point => new { x = point.X, y = point.Y }).ToArray()
         };
-      } finally { recordingMoves = false; Bounds = original; }
+      } finally { recordingMoves = false; MinimumSize = originalMinimum; Bounds = original; }
     }
     [DllImport("user32.dll")] static extern bool ReleaseCapture();
     [DllImport("user32.dll")] static extern short GetAsyncKeyState(int key);
@@ -475,6 +478,8 @@ namespace WiiMerge {
           }
           case "test:windowDrag":
             result = await TestWindowDrag(); break;
+          case "test:windowResize":
+            result = await TestWindowDrag(true); break;
           case "test:windowGeometry":
             if (fixtureFile == null && sharedOwner?.fixtureFile == null) throw new Exception("测试接口未启用。");
             var screen = Screen.FromHandle(Handle);

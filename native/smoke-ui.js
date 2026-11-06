@@ -167,6 +167,28 @@
       throw new Error(
         "Native window jumped during drag: " + JSON.stringify(drag),
       );
+    const resize = await control("test:windowResize");
+    const resizeOrigin = resize.started
+      ? resize.nativeStart
+      : resize.mouseStart;
+    const resizeX = resize.mouseEnd.x - resizeOrigin.x,
+      resizeY = resize.mouseEnd.y - resizeOrigin.y;
+    if (
+      resize.resizes === 0 ||
+      resizeX <= 0 ||
+      resizeY <= 0 ||
+      resize.after.x !== resize.before.x ||
+      resize.after.y !== resize.before.y ||
+      Math.abs(resize.after.width - resize.before.width - resizeX) > 2 ||
+      Math.abs(resize.after.height - resize.before.height - resizeY) > 2 ||
+      resize.after.x !== resize.settled.x ||
+      resize.after.y !== resize.settled.y ||
+      resize.after.width !== resize.settled.width ||
+      resize.after.height !== resize.settled.height
+    )
+      throw new Error(
+        "Native resize moved or jittered the window: " + JSON.stringify(resize),
+      );
     await window.wiiMerge.windowAction("maximize");
     await wait(
       () => document.documentElement.classList.contains("window-maximized"),
