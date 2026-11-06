@@ -137,7 +137,14 @@
       { x: 0, y: 40, width: 2560, height: 1400 },
       { x: 0, y: 0, width: 2560, height: 1400 },
     ];
-    if (JSON.stringify(geometry.cases) !== JSON.stringify(expected))
+    if (
+      geometry.cases.length !== expected.length ||
+      !expected.every((area, index) =>
+        Object.entries(area).every(
+          ([key, value]) => geometry.cases[index][key] === value,
+        ),
+      )
+    )
       throw new Error(
         "Multi-monitor coordinate regression: " +
           JSON.stringify(geometry.cases),
