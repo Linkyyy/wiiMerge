@@ -248,8 +248,67 @@ try {
   await excel.screenshot({
     path: path.join(root, "artifacts/diff-minimap-xls.png"),
   });
+  const duplicateMember = "WEB-INF/lib/nablarch-core-jdbc-1.4.0.jar";
+  for (const [dir, value] of [
+    [archiveA, "old-second"],
+    [archiveB, "new-second"],
+  ])
+    await fs.writeFile(
+      path.join(dir, "app.war"),
+      await zip([
+        [duplicateMember, await zip({ "config.txt": "stable-first" })],
+        [duplicateMember, await zip({ "config.txt": value })],
+        ["README.txt", "normal"],
+      ]),
+    );
+  await page.getByRole("tab", { name: "文件夹比较", exact: true }).click();
+  for (const [index, filename] of [archiveA, archiveB].entries()) {
+    await app.evaluate(({ dialog }, filename) => {
+      dialog.showOpenDialog = async () => ({
+        canceled: false,
+        filePaths: [filename],
+      });
+    }, filename);
+    await page
+      .getByRole("button", { name: "选择文件夹", exact: true })
+      .nth(index)
+      .click();
+  }
+  await page.getByRole("button", { name: "开始比较", exact: true }).click();
+  await expect(
+    page.locator(".comparison-overview .overview-table tbody tr"),
+  ).toHaveCount(3);
+  await expect(page.locator(".archive-warnings")).toBeVisible();
+  const duplicateWindow = app.waitForEvent("window");
+  await page
+    .locator(".comparison-overview .overview-table tbody tr")
+    .filter({ hasText: "同名#2" })
+    .getByRole("button", { name: "查看差分" })
+    .click();
+  const duplicate = await duplicateWindow;
+  await expect(duplicate.locator(".merge-table")).toContainText("old-second");
+  await expect(duplicate.locator(".merge-table")).toContainText("new-second");
+  await duplicate
+    .locator(".archive-warnings")
+    .first()
+    .locator("summary")
+    .click();
+  await duplicate
+    .getByRole("button", { name: "HTML 报告", exact: true })
+    .click();
+  await expect(duplicate.getByRole("status")).toContainText("已导出");
+  const duplicateHtml = await fs.readFile(html, "utf8");
+  if (
+    !duplicateHtml.includes("归档同名路径") ||
+    !duplicateHtml.includes("stable-first") ||
+    !duplicateHtml.includes("new-second")
+  )
+    throw new Error("Duplicate versions omitted from export");
+  await duplicate.screenshot({
+    path: path.join(root, "artifacts/duplicate-war.png"),
+  });
   console.log(
-    "PASS: overview first, visual text/Excel navigation, XLS/XLSX comparison, merge/save, archive Tabs, pagination and complete export",
+    "PASS: duplicate WAR/JAR versions, correct entry opening, complete export, overview, visual navigation, XLS and merge/save",
   );
 } finally {
   await app?.close();

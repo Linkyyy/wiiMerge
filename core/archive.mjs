@@ -1,4 +1,5 @@
 import yauzl from "yauzl";
+import path from "node:path";
 
 export const LIMITS = Object.freeze({
   depth: 3,
@@ -6,7 +7,21 @@ export const LIMITS = Object.freeze({
 export const isArchive = (name) => /\.(zip|war|jar)$/i.test(name);
 export const isWorkbook = (name) => /\.(xls|xlsx|xlsm)$/i.test(name);
 
-export async function readArchive(buffer, { collect = true } = {}) {
+export const archiveDisplayPath = (name) =>
+  name.replaceAll("⟦", "⟦⟦").replaceAll("⟧", "⟧⟧");
+export function archiveDisplayName(name, occurrence = 1) {
+  const escaped = archiveDisplayPath(name);
+  if (occurrence === 1) return escaped;
+  const ext = path.posix.extname(escaped);
+  return (
+    escaped.slice(0, escaped.length - ext.length) + `⟦同名#${occurrence}⟧` + ext
+  );
+}
+
+export async function readArchive(
+  buffer,
+  { collect = true, rejectDuplicates = false } = {},
+) {
   const zip = await new Promise((resolve, reject) =>
     yauzl.fromBuffer(
       buffer,
@@ -21,7 +36,7 @@ export async function readArchive(buffer, { collect = true } = {}) {
   );
   return new Promise((resolve, reject) => {
     const entries = [],
-      names = new Set();
+      names = new Map();
     let settled = false;
     const fail = (error) => {
       if (settled) return;
@@ -33,7 +48,13 @@ export async function readArchive(buffer, { collect = true } = {}) {
     zip.on("end", () => {
       if (!settled) {
         settled = true;
-        resolve(entries);
+        resolve(
+          entries.map((e) => ({
+            ...e,
+            duplicateCount: names.get(e.name),
+            displayName: archiveDisplayName(e.name, e.occurrence),
+          })),
+        );
       }
     });
     zip.on("entry", (entry) => {
@@ -49,12 +70,15 @@ export async function readArchive(buffer, { collect = true } = {}) {
           throw new Error("归档包含不安全的路径");
         if (((entry.externalFileAttributes >>> 16) & 0o170000) === 0o120000)
           throw new Error(`归档含有符号链接：${name}`);
-        if (names.has(name)) throw new Error(`归档含有重复路径：${name}`);
-        names.add(name);
+        const occurrence = (names.get(name) || 0) + 1;
+        if (rejectDuplicates && occurrence > 1)
+          throw new Error(`Excel 工作簿包包含重复路径：${name}`);
+        names.set(name, occurrence);
         if (entry.generalPurposeBitFlag & 1)
           throw new Error(`不支持加密归档：${name}`);
         if (name.endsWith("/")) {
-          if (collect) entries.push({ name, directory: true, size: 0 });
+          if (collect && occurrence === 1)
+            entries.push({ name, directory: true, size: 0, occurrence });
           zip.readEntry();
           return;
         }
@@ -74,7 +98,12 @@ export async function readArchive(buffer, { collect = true } = {}) {
           if (collect) chunks.push(chunk);
         }
         if (collect)
-          entries.push({ name, buffer: Buffer.concat(chunks), size: actual });
+          entries.push({
+            name,
+            buffer: Buffer.concat(chunks),
+            size: actual,
+            occurrence,
+          });
         zip.readEntry();
       })().catch(fail);
     });

@@ -23,7 +23,7 @@ async function readWorkbook(buffer, rules) {
   if (buffer[0] !== 0x50 || buffer[1] !== 0x4b)
     return readLegacyWorkbook(buffer, rules);
   // Validate package paths, encryption and declared sizes before parsing XML.
-  await readArchive(buffer, { collect: false });
+  await readArchive(buffer, { collect: false, rejectDuplicates: true });
   const workbook = new Workbook();
   await workbook.xlsx.load(buffer);
   const sheets = new Map();

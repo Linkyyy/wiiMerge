@@ -4,7 +4,7 @@ import { randomUUID, createHash } from "node:crypto";
 import iconv from "iconv-lite";
 import { decode } from "./compare.mjs";
 import { safeRead, inspectFile } from "./io.mjs";
-import { isArchive, readArchive } from "./archive.mjs";
+import { isArchive, readArchive, archiveDisplayName } from "./archive.mjs";
 import { compareText } from "./text.mjs";
 import { DEFAULT_RULES } from "./defaults.mjs";
 
@@ -15,38 +15,51 @@ const inside = (root, file) => {
     !rel.startsWith(".." + path.sep) && rel !== ".." && !path.isAbsolute(rel)
   );
 };
-async function sideSource(root, relative, missing, encoding, binary = false) {
+async function sideSource(
+  root,
+  relative,
+  missing,
+  encoding,
+  binary = false,
+  archiveSteps,
+) {
   const stat = await fs.lstat(root);
   if (stat.isSymbolicLink()) throw new Error("不读取符号链接");
   let file = root,
     virtual = false,
     buffer = null,
     boundary = null;
-  const pieces = (relative || "").split("!/");
+  const steps = (archiveSteps || []).map((step) => ({ ...step }));
   if (stat.isDirectory()) {
     boundary = await fs.realpath(root);
-    file = path.resolve(root, pieces.shift() || "");
+    file = path.resolve(
+      root,
+      steps.length ? steps.shift().name : relative || "",
+    );
     if (!inside(path.resolve(root), file))
       throw new Error("文件路径超出比较范围");
     if (!missing) {
       if (!inside(boundary, await fs.realpath(file)))
         throw new Error("文件路径超出比较范围");
-      if (!binary || isArchive(file)) buffer = await safeRead(file);
+      if (!binary || isArchive(file) || steps.length)
+        buffer = await safeRead(file);
     }
   } else {
-    if (!missing && (!binary || isArchive(file))) buffer = await safeRead(file);
+    if (!missing && (!binary || isArchive(file) || steps.length))
+      buffer = await safeRead(file);
     boundary = path.dirname(await fs.realpath(root));
-    if (!isArchive(root)) pieces.length = 0;
   }
-  if (isArchive(file) && !missing) {
-    virtual = true;
-    for (const member of pieces) {
-      const entry = (await readArchive(buffer)).find((e) => e.name === member);
+  virtual = isArchive(file) || steps.length > 0;
+  if (virtual && !missing) {
+    for (const step of steps) {
+      const entry = (await readArchive(buffer)).find(
+        (e) => e.name === step.name && e.occurrence === step.occurrence,
+      );
       if (!entry || entry.directory)
         throw new Error("归档条目已改变，请重新比较");
       buffer = entry.buffer;
     }
-  } else if (pieces.length) virtual = true;
+  }
   if (binary)
     return {
       file,
@@ -74,7 +87,13 @@ async function sideSource(root, relative, missing, encoding, binary = false) {
     bom = "efbbbf";
   return {
     file,
-    label: virtual ? file + "!/" + pieces.join("!/") : file,
+    label: virtual
+      ? file +
+        "!/" +
+        steps
+          .map((step) => archiveDisplayName(step.name, step.occurrence))
+          .join("!/")
+      : file,
     boundary,
     virtual,
     exists: !missing,
@@ -142,7 +161,8 @@ export class Workspace {
     if (!item || item.type !== "text" || item.error)
       throw new Error("该条目不支持文本合并");
     const sources = {};
-    for (const side of ["left", "right"])
+    for (const side of ["left", "right"]) {
+      const other = side === "left" ? "right" : "left";
       sources[side] =
         request.mode === "text"
           ? {
@@ -155,10 +175,24 @@ export class Workspace {
             }
           : await sideSource(
               request[side],
-              item[side + "Path"] ?? item.path,
+              item[side + "Path"] ?? item[other + "Path"] ?? item.path,
               item[side + "Path"] === null,
               report.rules.encoding,
+              false,
+              item[side + "ArchiveSteps"] ??
+                (item[side + "Path"] === null
+                  ? item[other + "ArchiveSteps"]
+                  : undefined),
             );
+      if (item.duplicateVariant && item[side + "Path"] === null)
+        sources[side].virtual = true;
+      if (
+        item[side + "ArchiveSteps"]?.length &&
+        item[side + "Path"] !== null &&
+        sources[side].fingerprint !== item[side + "Fingerprint"]
+      )
+        throw new Error("归档内容在比较后发生变化，请重新比较后打开该版本");
+    }
     const d = {
       id: randomUUID(),
       reportId,
@@ -316,6 +350,8 @@ export class Workspace {
     )
       throw new Error("该条目不支持整文件替换");
     const to = from === "left" ? "right" : "left";
+    if (item.duplicateVariant && !item[to + "Path"])
+      throw new Error("该同名后续条目在目标侧没有对应版本，不直接覆盖原文件");
     if (
       item.type === "excel" &&
       item.leftPath &&
@@ -334,13 +370,15 @@ export class Workspace {
       false,
       "auto",
       true,
+      item[from + "ArchiveSteps"],
     );
     const b = await sideSource(
       session.request[to],
-      item[to + "Path"] || item.path,
+      item[to + "Path"] || item[from + "Path"] || item.path,
       !item[to + "Path"],
       "auto",
       true,
+      item[to + "ArchiveSteps"] ?? item[from + "ArchiveSteps"],
     );
     if (b.virtual)
       throw new Error("归档内条目不直接回写；文本可按块合并后另存");

@@ -17,7 +17,9 @@ export async function zip(files) {
     zip.outputStream.on("end", () => resolve(Buffer.concat(chunks)));
     zip.outputStream.on("error", reject);
   });
-  for (const [name, value] of Object.entries(files)) {
+  for (const [name, value] of Array.isArray(files)
+    ? files
+    : Object.entries(files)) {
     if (name.endsWith("/")) zip.addEmptyDirectory(name);
     else
       zip.addBuffer(Buffer.isBuffer(value) ? value : Buffer.from(value), name);

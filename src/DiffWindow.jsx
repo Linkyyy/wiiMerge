@@ -20,6 +20,7 @@ import { Detail, CharacterDiff } from "./App.jsx";
 import { adoptHunk, textModel } from "../core/hunks.mjs";
 import { textNavigation } from "../core/navigation.mjs";
 import DiffMap from "./DiffMap.jsx";
+import ArchiveWarnings from "./ArchiveWarnings.jsx";
 import useDiffViewport from "./useDiffViewport.js";
 
 const api = window.wiiMerge;
@@ -186,10 +187,16 @@ export default function DiffWindow() {
   );
   async function openItem(i) {
     const id = "file:" + i.key;
+    const versions = (i.rightArchiveSteps || i.leftArchiveSteps || [])
+      .slice(0, -1)
+      .filter((step) => step.occurrence > 1)
+      .map((step) => step.occurrence);
+    const name =
+      base(i.path) + (versions.length ? ` · 同名#${versions.join("/")}` : "");
     setTabs((ts) =>
       ts.some((t) => t.id === id)
         ? ts
-        : [...ts, { id, type: "file", name: base(i.path), itemKey: i.key }],
+        : [...ts, { id, type: "file", name, path: i.path, itemKey: i.key }],
     );
     setActive(id);
     setError("");
@@ -318,10 +325,14 @@ export default function DiffWindow() {
           Excel 报告
         </button>
       </div>
+      <ArchiveWarnings warnings={report.warnings} />
       <div className="document-tabs">
         {tabs.map((t) => (
           <div key={t.id} className={active === t.id ? "active" : ""}>
-            <button onClick={() => setActive(t.id)}>
+            <button
+              title={t.path || t.prefix || t.name}
+              onClick={() => setActive(t.id)}
+            >
               {t.type === "archive" ? (
                 <Archive size={14} />
               ) : (
@@ -435,6 +446,7 @@ export default function DiffWindow() {
             change={change}
             save={save}
             busy={busy}
+            warnings={item.warnings}
           />
         ) : (
           <div className="readonly-document">
@@ -445,13 +457,23 @@ export default function DiffWindow() {
                   : "Excel / 二进制采用整文件替换（保留原文件备份）"}
               </span>
               <button
-                disabled={busy || mixedExcel}
+                disabled={
+                  busy ||
+                  mixedExcel ||
+                  !!item?.error ||
+                  item?.type === "directory"
+                }
                 onClick={() => adoptWhole("left")}
               >
                 整文件使用左边 →
               </button>
               <button
-                disabled={busy || mixedExcel}
+                disabled={
+                  busy ||
+                  mixedExcel ||
+                  !!item?.error ||
+                  item?.type === "directory"
+                }
                 onClick={() => adoptWhole("right")}
               >
                 ← 整文件使用右边
@@ -471,7 +493,7 @@ export default function DiffWindow() {
   );
 }
 
-function TextEditor({ doc, change, save, busy }) {
+function TextEditor({ doc, change, save, busy, warnings }) {
   const [cursor, setCursor] = useState(0),
     [limit, setLimit] = useState(600),
     [editing, setEditing] = useState(false),
@@ -594,6 +616,7 @@ function TextEditor({ doc, change, save, busy }) {
         ))}
       </aside>
       <div className="editor-main">
+        <ArchiveWarnings warnings={warnings} entry />
         <div className="merge-toolbar">
           <button
             disabled={!model.hunks.length || busy}

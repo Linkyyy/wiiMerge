@@ -6,13 +6,13 @@ Windows 优先的本地桌面差异比较工具，使用 React 界面和共享 N
 
 Windows 10 / 11 x64：在 [GitHub Actions 构建页面](https://github.com/Linkyyy/wiiMerge/actions/workflows/ci.yml) 打开成功的构建记录，从 **Artifacts → wiiMerge-WebView2-Windows-x64** 下载精简版 ZIP（需要登录 GitHub）。**解压整个 ZIP 后运行 `wiiMerge.exe`**，请勿只复制启动器。无需另装 Node.js 或 Office。这是未签名的开发版便携程序。
 
-[0.3.0 精简版下载页面](https://github.com/Linkyyy/wiiMerge/actions/runs/42018026010#artifacts)
+[最新精简版构建与下载](https://github.com/Linkyyy/wiiMerge/actions/workflows/ci.yml)
 
 精简版依赖系统的 **Microsoft Edge WebView2 Runtime 和 .NET Framework 4.8**，Windows 11 通常自带；缺少 WebView2 时程序会提示微软官方安装地址。它仍然自带比较引擎，正常比较不需要联网。旧版 Electron 的规则配置继续可用。
 
-如果电脑不能安装系统组件，可下载 **wiiMerge-Windows-x64** 兼容版，解压后运行 `wiiMerge-0.3.0-Windows-x64.exe`。兼容版自带浏览器运行时，体积较大。Actions 下载有保留期限，过期后可在上述页面重新运行构建。
+如果电脑不能安装系统组件，可下载 **wiiMerge-Windows-x64** 兼容版，解压后运行 `wiiMerge-0.3.1-Windows-x64.exe`。兼容版自带浏览器运行时，体积较大。Actions 下载有保留期限，过期后可在上述页面重新运行构建。
 
-### 0.3.0 体积
+### 0.3.1 体积
 
 | 本地构建实测     | 原 0.1.0  | WebView2 精简版 | 减少  |
 | ---------------- | --------- | --------------- | ----- |
@@ -43,17 +43,23 @@ WebView2 浏览器由系统共享，上表不包括已有系统组件的磁盘�
 
 ## 功能
 
-| 类型                             | 比较方式                                                                                        |
-| -------------------------------- | ----------------------------------------------------------------------------------------------- |
-| 文本 / 代码                      | 行对齐、原始行号、字符级高亮；统一 CRLF / LF / CR，保留末尾换行差异                             |
-| 文件                             | 自动识别文本、Excel；其他内容按原始字节比较，展示 SHA-256                                       |
-| 文件夹                           | 递归按相对路径配对，识别新增、移除、修改、一致、错误和空文件夹                                  |
-| ZIP / WAR / JAR                  | 内存中展开，不向磁盘释放条目；支持归档内 Excel 和最多三层嵌套归档                               |
-| Excel `.xls` / `.xlsx` / `.xlsm` | 支持旧版 BIFF XLS 和跨格式比较；按工作表名称、单元格位置或指定主键列匹配；支持公式 / 缓存值切换 |
-| HTML 导出                        | 单个独立文件，包含比较摘要、规则、文件和差异明细；转义内容，无脚本及远程资源                    |
-| Excel 导出                       | 摘要、文件清单、文本差异、Excel 差异、工作表清单、二进制指纹六类工作表                          |
+| 类型                             | 比较方式                                                                                                       |
+| -------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| 文本 / 代码                      | 行对齐、原始行号、字符级高亮；统一 CRLF / LF / CR，保留末尾换行差异                                            |
+| 文件                             | 自动识别文本、Excel；其他内容按原始字节比较，展示 SHA-256                                                      |
+| 文件夹                           | 递归按相对路径配对，识别新增、移除、修改、一致、错误和空文件夹                                                 |
+| ZIP / WAR / JAR                  | 内存中展开，不向磁盘释放条目；支持归档内 Excel 和最多三层嵌套归档；兼容重复路径，同名文件按出现序号分别比较    |
+| Excel `.xls` / `.xlsx` / `.xlsm` | 支持旧版 BIFF XLS 和跨格式比较；按工作表名称、单元格位置或指定主键列匹配；支持公式 / 缓存值切换                |
+| HTML 导出                        | 单个独立文件，包含比较摘要、规则、文件和差异明细；转义内容，无脚本及远程资源                                   |
+| Excel 导出                       | 摘要、文件清单、文本差异、Excel 差异、工作表清单、二进制指纹六类工作表；存在重复归档条目时另附「归档重复路径」 |
 
 「仅左侧」「仅右侧」始终相对当前输入，不代表实际的版本历史。
+
+### 归档同名条目
+
+ZIP / WAR / JAR 允许同一条路径在归档中出现多次，例如 `WEB-INF/lib/nablarch-core-jdbc-1.4.0.jar`。程序保留每份文件，按归档中的出现序号配对；后续条目显示为 `nablarch-core-jdbc-1.4.0⟦同名#2⟧.jar` 等虚拟标签。即使内容相同也保留各自的出现次数，只有一侧多出的版本显示为仅该侧存在。
+
+双击标签按原始路径和序号读取对应版本，支持重复 JAR 内部继续比较。界面提供版本提示，HTML / Excel 报告包含全部版本及重复路径清单。虚拟标签不修改或重新打包原归档，归档内文本仍通过「另存为」保存。重复的目录记录合并为一个逻辑目录。XLSX / XLSM 的内部 XML 包继续拒绝重复路径，避免以不明确的工作簿内容进行比较。
 
 ### 匹配规则
 
@@ -94,7 +100,7 @@ Linux 无图形显示器的云容器可使用以下测试方式。`--no-sandbox`
 WIIMERGE_SMOKE_HEADLESS=1 WIIMERGE_TEST_APP_PATH=.desktop-build npm run test:desktop
 ```
 
-WebView2 启动器可在 Linux 交叉编译。`npm run dist:lite` 使用固定版本的官方 Windows Node.js ZIP，并验证固定 SHA-256；WebView2 SDK 与 .NET 引用程序集由 NuGet 锁文件固定。产物在 `release/wiiMerge-0.3.0-WebView2-Windows-x64.zip`，解压文件也保留在 `.native-build/`。代理环境需在命令前设置 `NODE_USE_ENV_PROXY=1`。`WIIMERGE_DOTNET` 可指定 `dotnet` 的绝对路径。
+WebView2 启动器可在 Linux 交叉编译。`npm run dist:lite` 使用固定版本的官方 Windows Node.js ZIP，并验证固定 SHA-256；WebView2 SDK 与 .NET 引用程序集由 NuGet 锁文件固定。产物在 `release/wiiMerge-0.3.1-WebView2-Windows-x64.zip`，解压文件也保留在 `.native-build/`。代理环境需在命令前设置 `NODE_USE_ENV_PROXY=1`。`WIIMERGE_DOTNET` 可指定 `dotnet` 的绝对路径。
 
 Linux 上单独检查精简版界面与后台：先执行 `npm run build && node scripts/build-native.mjs --prepare-only`，再执行 `npm run test:native`；可用 `PLAYWRIGHT_CHROMIUM_EXECUTABLE` 指定 Chrome / Chromium。这项检查模拟原生对话框，Windows CI 则启动编译后的 WinForms + WebView2 程序，测试真实宿主消息、文件授权、拖放和导出。
 

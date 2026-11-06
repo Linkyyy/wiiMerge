@@ -19,6 +19,9 @@ const limitsNote =
   "文本 / 单元格明细每项最多保留 12,000 条；如有截断会单独标注。Excel 仅比较单元格内容，不比较样式、图表、宏或合并布局。仅右侧 / 仅左侧均相对左右输入，不代表实际修改历史。";
 
 export function htmlReport(report) {
+  const archiveNotes = report.warnings?.length
+    ? `<div class="warning"><p>归档同名路径：${report.warnings.length} 组；所有文件按出现序号分别比较，虚拟版本标签不改动原归档。</p><ul>${report.warnings.map((w) => `<li>${escape(w.message)}</li>`).join("")}</ul></div>`
+    : "";
   const row = (cells, status = "") =>
     `<tr class="${escape(status)}">${cells.map((c) => `<td>${escape(c)}</td>`).join("")}</tr>`;
   const table = (headers, rows) =>
@@ -31,12 +34,14 @@ body{font:14px/1.6 system-ui,sans-serif;color:#253449;background:#f5f7fb;margin:
     .map(([k, v]) => `${v} ${report.summary[k]}`)
     .join(
       "　 /　 ",
-    )}</b><p class="meta">共 ${report.summary.total} 项；排除 ${report.summary.excluded} 项。${escape(limitsNote)}</p>${report.summary.error ? '<p class="warning">部分条目未能比较，请查看错误详情；结果不能视为完整一致。</p>' : ""}${report.draft ? '<p class="warning">包含未保存的合并编辑，编辑条目按原文比较。</p>' : ""}</div><section><h2>差分一览</h2><table><thead><tr><th>文件</th><th>状态</th><th>类型</th></tr></thead><tbody>${report.items.map((item, index) => `<tr><td><a href="#file-${index}">${escape(item.path)}</a></td><td>${STATUS_LABEL[item.status]}</td><td>${escape(item.type)}</td></tr>`).join("")}</tbody></table></section>${report.items
+    )}</b><p class="meta">共 ${report.summary.total} 项；排除 ${report.summary.excluded} 项。${escape(limitsNote)}</p>${report.summary.error ? '<p class="warning">部分条目未能比较，请查看错误详情；结果不能视为完整一致。</p>' : ""}${archiveNotes}${report.draft ? '<p class="warning">包含未保存的合并编辑，编辑条目按原文比较。</p>' : ""}</div><section><h2>差分一览</h2><table><thead><tr><th>文件</th><th>状态</th><th>类型</th></tr></thead><tbody>${report.items.map((item, index) => `<tr><td><a href="#file-${index}">${escape(item.path)}</a></td><td>${STATUS_LABEL[item.status]}</td><td>${escape(item.type)}</td></tr>`).join("")}</tbody></table></section>${report.items
     .map((item, index) => {
       const d = item.details;
       let body = item.error
         ? `<p class="warning">${escape(item.error)}</p>`
         : "";
+      if (item.warnings?.length)
+        body += `<details class="warning"><summary>归档条目版本信息</summary><ul>${item.warnings.map((message) => `<li>${escape(message)}</li>`).join("")}</ul></details>`;
       if (d?.truncated)
         body += d.contextOmitted
           ? '<p class="warning">文本较长，一致行已省略；最多保留 12,000 行差异，总计仍按全部内容计算。</p>'
@@ -122,6 +127,22 @@ export async function excelReport(report) {
     "工作区编辑",
     report.draft ? "包含未保存编辑；编辑条目按原文比较" : "已保存文件快照",
   ]);
+  if (report.warnings?.length) {
+    summary.addRow([
+      "归档同名路径",
+      `${report.warnings.length} 组；文件按出现序号配对，全部参与比较`,
+    ]);
+    const duplicates = wb.addWorksheet("归档重复路径");
+    duplicates.addRow(["侧", "归档", "原始路径", "出现次数", "处理方式"]);
+    for (const w of report.warnings)
+      duplicates.addRow([
+        w.side,
+        w.archive,
+        w.path,
+        w.count,
+        w.directory ? "重复目录合并" : "各文件按出现序号分别比较",
+      ]);
+  }
   const files = wb.addWorksheet("文件清单");
   files.addRow([
     "路径",
@@ -133,6 +154,7 @@ export async function excelReport(report) {
     "右侧字节",
     "错误",
     "明细截断",
+    "归档条目版本信息",
   ]);
   const lines = wb.addWorksheet("文本差异");
   lines.addRow(["文件", "状态", "左行", "左侧内容", "右行", "右侧内容"]);
@@ -164,6 +186,7 @@ export async function excelReport(report) {
       item.rightSize,
       item.error ?? "",
       d?.truncated ? "是" : "否",
+      (item.warnings || []).join("\n"),
     ]);
     if (d?.kind === "text")
       for (const r of d.rows)

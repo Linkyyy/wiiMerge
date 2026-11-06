@@ -46,6 +46,7 @@ import { DEFAULT_RULES } from "../core/defaults.mjs";
 import Titlebar from "./Titlebar.jsx";
 import Pagination, { usePagination } from "./Pagination.jsx";
 import DiffMap from "./DiffMap.jsx";
+import ArchiveWarnings from "./ArchiveWarnings.jsx";
 import useDiffViewport from "./useDiffViewport.js";
 import { excelNavigation } from "../core/navigation.mjs";
 const api = window.wiiMerge;
@@ -608,6 +609,7 @@ export default function App() {
                 )}
               </div>
             </div>
+            <ArchiveWarnings warnings={report.warnings} />
             <div className="summary-strip">
               {[
                 { key: "changed", icon: ArrowLeftRight },
@@ -1105,6 +1107,7 @@ export function Detail({ item }) {
           ))}
         </div>
       )}
+      <ArchiveWarnings warnings={item.warnings} entry />
       <div className="detail-with-map">
         {d?.kind === "excel" && (
           <aside className="hunk-navigation excel-navigation">

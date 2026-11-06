@@ -123,6 +123,30 @@
       completed.push(
         "WAR/JAR double-click virtual extraction, new Tab and file details",
       );
+      [...document.querySelectorAll(".document-tabs>div>button:first-child")]
+        .find((button) => button.textContent.trim() === "app.war")
+        .click();
+      await wait(
+        () => document.querySelector(".overview-table"),
+        "Archive overview missing",
+      );
+      const duplicate = [
+        ...document.querySelectorAll(".overview-table tbody tr"),
+      ].find((row) => row.textContent.includes("同名#2"));
+      if (!duplicate) throw new Error("Duplicate JAR version missing");
+      duplicate.querySelector("button").click();
+      await wait(
+        () =>
+          document
+            .querySelector(".merge-table")
+            ?.textContent.includes("before-second") &&
+          document
+            .querySelector(".merge-table")
+            ?.textContent.includes("after-second"),
+        "Duplicate JAR opened the wrong occurrence",
+      );
+      if (!document.querySelector(".archive-warnings"))
+        throw new Error("Duplicate notice missing");
       for (const text of ["HTML 报告", "Excel 报告"]) {
         [...document.querySelectorAll(".diff-topbar button")]
           .find((b) => b.textContent.trim() === text)

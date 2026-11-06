@@ -5,7 +5,13 @@ import iconv from "iconv-lite";
 import { validateRules, pathMatcher } from "./rules.mjs";
 import { compareText } from "./text.mjs";
 import { compareExcel } from "./excel.mjs";
-import { readArchive, LIMITS, isArchive, isWorkbook } from "./archive.mjs";
+import {
+  readArchive,
+  LIMITS,
+  isArchive,
+  isWorkbook,
+  archiveDisplayPath,
+} from "./archive.mjs";
 import { safeRead, inspectFile } from "./io.mjs";
 export { safeRead } from "./io.mjs";
 
@@ -31,18 +37,31 @@ export function decode(buffer, encoding) {
 
 async function collectSource(filename, rules, progress) {
   const matcher = pathMatcher(rules),
-    entries = new Map();
+    entries = new Map(),
+    warnings = [];
   let excluded = 0;
   const add = (entry) => {
-    const key = matcher.key(entry.path);
-    if (!key) throw new Error(`路径匹配规则产生空路径：${entry.path}`);
+    const matchedPath = matcher.key(entry.path);
+    if (!matchedPath) throw new Error(`路径匹配规则产生空路径：${entry.path}`);
+    const key = JSON.stringify([
+      matchedPath,
+      (entry.duplicates || []).map(([p, n]) => [matcher.key(p), n]),
+    ]);
     if (entries.has(key))
       throw new Error(
         `路径匹配冲突：「${entries.get(key).path}」与「${entry.path}」；请调整大小写或路径替换规则`,
       );
     entries.set(key, entry);
   };
-  const expand = async (buffer, prefix = "", depth = 0) => {
+  const expand = async (
+    buffer,
+    prefix = "",
+    depth = 0,
+    displayPrefix = "",
+    archiveSteps = [],
+    duplicates = [],
+    notices = [],
+  ) => {
     if (depth > LIMITS.depth) throw new Error("嵌套归档超过 3 层上限");
     const archive = await readArchive(buffer);
     const populated = new Set();
@@ -59,19 +78,71 @@ async function collectSource(filename, rules, progress) {
         excluded++;
         continue;
       }
+      const displayPath = displayPrefix + item.displayName;
+      const steps = [
+        ...archiveSteps,
+        { name: item.name, occurrence: item.occurrence },
+      ];
+      const variants =
+        item.occurrence > 1
+          ? [...duplicates, [rel, item.occurrence]]
+          : duplicates;
+      const notice =
+        item.duplicateCount > 1
+          ? `同名路径「${rel}」共 ${item.duplicateCount} 项，当前为第 ${item.occurrence} 项；${item.directory ? "重复目录已合并" : "每份文件均按出现顺序分别比较"}`
+          : null;
+      const itemNotices = notice ? [...notices, notice] : notices;
+      if (notice && item.occurrence === 1)
+        warnings.push({
+          archive: displayPrefix.replace(/!\/$/, "") || path.basename(filename),
+          path: rel,
+          count: item.duplicateCount,
+          directory: !!item.directory,
+        });
       if (item.directory) {
         if (!populated.has(item.name))
-          add({ path: rel.replace(/\/$/, ""), kind: "directory", size: 0 });
+          add({
+            path: rel.replace(/\/$/, ""),
+            displayPath: displayPath.replace(/\/$/, ""),
+            kind: "directory",
+            size: 0,
+            archiveSteps: steps,
+            duplicates: variants,
+            warnings: itemNotices,
+          });
         continue;
       }
-      if (isArchive(rel)) {
+      if (isArchive(item.name)) {
         try {
-          await expand(item.buffer, `${rel}!/`, depth + 1);
+          await expand(
+            item.buffer,
+            `${rel}!/`,
+            depth + 1,
+            `${displayPath}!/`,
+            steps,
+            variants,
+            itemNotices,
+          );
         } catch (error) {
-          add({ path: rel, error: error.message });
+          add({
+            path: rel,
+            displayPath,
+            archiveSteps: steps,
+            duplicates: variants,
+            warnings: itemNotices,
+            error: error.message,
+          });
         }
       } else {
-        add({ path: rel, size: item.size, read: async () => item.buffer });
+        add({
+          path: rel,
+          displayPath,
+          archiveSteps: steps,
+          duplicates: variants,
+          warnings: itemNotices,
+          size: item.size,
+          read: async () => item.buffer,
+        });
       }
     }
   };
@@ -103,7 +174,14 @@ async function collectSource(filename, rules, progress) {
       progress?.({ phase: "scan", message: `正在扫描 ${rel}` });
       try {
         const stat = await fs.lstat(absolute);
-        if (isArchive(rel)) await expand(await safeRead(absolute), `${rel}!/`);
+        if (isArchive(rel))
+          await expand(
+            await safeRead(absolute),
+            `${rel}!/`,
+            0,
+            `${archiveDisplayPath(rel)}!/`,
+            [{ name: rel, occurrence: 1 }],
+          );
         else
           add({
             path: rel,
@@ -137,25 +215,46 @@ async function collectSource(filename, rules, progress) {
         ],
       ]),
       excluded,
+      warnings,
     };
   else throw new Error("请选择普通文件或文件夹");
-  return { tree: true, entries, excluded, directory: stat.isDirectory() };
+  return {
+    tree: true,
+    entries,
+    excluded,
+    warnings,
+    directory: stat.isDirectory(),
+  };
 }
 
 async function compareEntry(key, left, right, rules) {
   const item = {
     key,
-    path: right?.path ?? left.path,
+    path:
+      right?.displayPath ??
+      left?.displayPath ??
+      archiveDisplayPath(right?.path ?? left.path),
     leftPath: left?.path ?? null,
     rightPath: right?.path ?? null,
     leftSize: left?.size ?? null,
     rightSize: right?.size ?? null,
+    leftArchiveSteps: left?.archiveSteps,
+    rightArchiveSteps: right?.archiveSteps,
+    duplicateVariant: !!(left?.duplicates?.length || right?.duplicates?.length),
+    warnings: [
+      ...new Set([
+        ...(left?.warnings || []).map((message) => `左侧：${message}`),
+        ...(right?.warnings || []).map((message) => `右侧：${message}`),
+      ]),
+    ],
     status: !left ? "added" : !right ? "removed" : "equal",
     type: "binary",
   };
   try {
     if (left?.error || right?.error)
-      throw new Error([left?.error, right?.error].filter(Boolean).join("；"));
+      throw new Error(
+        [...new Set([left?.error, right?.error].filter(Boolean))].join("；"),
+      );
     if (left?.kind === "directory" || right?.kind === "directory") {
       item.type = "directory";
       item.details = {
@@ -262,6 +361,7 @@ export async function compare(request, onProgress) {
   if (!["text", "files", "folders"].includes(mode))
     throw new Error("无效的比较模式");
   let items,
+    warnings = [],
     excluded = 0;
   if (mode === "text") {
     if (typeof request.left !== "string" || typeof request.right !== "string")
@@ -286,6 +386,14 @@ export async function compare(request, onProgress) {
     const left = await collectSource(request.left, rules, progress);
     progress({ phase: "scan", message: "正在扫描右侧…" });
     const right = await collectSource(request.right, rules, progress);
+    warnings = [
+      ...left.warnings.map((w) => ({ ...w, side: "左侧" })),
+      ...right.warnings.map((w) => ({ ...w, side: "右侧" })),
+    ];
+    warnings = warnings.map((w) => ({
+      ...w,
+      message: `${w.side}归档「${w.archive}」：路径「${w.path}」出现 ${w.count} 次；${w.directory ? "重复目录已合并" : "全部文件按出现顺序分别比较，带 ⟦同名#N⟧ 的是后续条目"}`,
+    }));
     if (left.tree !== right.tree)
       throw new Error("请选择两个普通文件，或两个文件夹 / ZIP、WAR、JAR 归档");
     if (mode === "folders" && (!left.directory || !right.directory))
@@ -298,7 +406,7 @@ export async function compare(request, onProgress) {
     for (const key of keys) {
       progress({
         phase: "compare",
-        message: `正在比较 ${key === "file" ? left.entries.get(key)?.path : key}`,
+        message: `正在比较 ${right.entries.get(key)?.displayPath || right.entries.get(key)?.path || left.entries.get(key)?.displayPath || left.entries.get(key)?.path}`,
         completed: items.length,
         total: keys.length,
       });
@@ -337,6 +445,7 @@ export async function compare(request, onProgress) {
     rightLabel: mode === "text" ? "右侧文本" : request.right,
     rules,
     summary,
+    warnings,
     items,
   };
 }

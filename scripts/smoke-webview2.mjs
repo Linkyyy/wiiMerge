@@ -27,11 +27,17 @@ await fs.mkdir(left);
 await fs.mkdir(right);
 await fs.writeFile(
   path.join(left, "app.war"),
-  await zip({ "lib/app.jar": await zip({ "app.txt": "before" }) }),
+  await zip([
+    ["lib/app.jar", await zip({ "app.txt": "before" })],
+    ["lib/app.jar", await zip({ "app.txt": "before-second" })],
+  ]),
 );
 await fs.writeFile(
   path.join(right, "app.war"),
-  await zip({ "lib/app.jar": await zip({ "app.txt": "after" }) }),
+  await zip([
+    ["lib/app.jar", await zip({ "app.txt": "after" })],
+    ["lib/app.jar", await zip({ "app.txt": "after-second" })],
+  ]),
 );
 for (const dir of [left, right])
   await fs.writeFile(path.join(dir, "same.txt"), "same");
@@ -107,13 +113,15 @@ try {
   if (
     !exported.includes("差分一览") ||
     !exported.includes("app.txt") ||
-    !exported.includes("before")
+    !exported.includes("before-second") ||
+    !exported.includes("同名#2")
   )
     throw new Error("HTML overview or file details missing");
   const wb = new ExcelJS.Workbook();
   await wb.xlsx.readFile(xlsx);
   if (
-    wb.getWorksheet("文件清单").rowCount !== 3 ||
+    wb.getWorksheet("文件清单").rowCount !== 4 ||
+    wb.getWorksheet("归档重复路径")?.rowCount !== 3 ||
     wb.getWorksheet("文本差异").rowCount < 2
   )
     throw new Error("Excel overview or details missing");

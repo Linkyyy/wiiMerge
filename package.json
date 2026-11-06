@@ -1,6 +1,6 @@
 {
   "name": "wiimerge",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "本地文件、文本、Excel 与归档差异比较工具",
   "private": true,
   "type": "module",

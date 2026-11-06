@@ -19,11 +19,17 @@ await fs.mkdir(left);
 await fs.mkdir(right);
 await fs.writeFile(
   path.join(left, "app.war"),
-  await zip({ "lib/app.jar": await zip({ "app.txt": "before" }) }),
+  await zip([
+    ["lib/app.jar", await zip({ "app.txt": "stable" })],
+    ["lib/app.jar", await zip({ "app.txt": "before" })],
+  ]),
 );
 await fs.writeFile(
   path.join(right, "app.war"),
-  await zip({ "lib/app.jar": await zip({ "app.txt": "after" }) }),
+  await zip([
+    ["lib/app.jar", await zip({ "app.txt": "stable" })],
+    ["lib/app.jar", await zip({ "app.txt": "after" })],
+  ]),
 );
 let child,
   browser,
@@ -165,7 +171,11 @@ try {
   const diff = windows[0];
   await diff.locator(".nav-tree-row").filter({ hasText: "app.war" }).dblclick();
   await expect(diff.locator(".document-tabs>div")).toHaveCount(2);
-  await diff.getByRole("button", { name: "打开差分", exact: true }).click();
+  await diff
+    .locator(".overview-table tbody tr")
+    .filter({ hasText: "同名#2" })
+    .getByRole("button", { name: "打开差分", exact: true })
+    .click();
   await diff.locator(".merge-table").waitFor();
   await expect(diff.locator(".merge-table")).toContainText("before");
   await expect(diff.locator(".merge-table")).toContainText("after");
